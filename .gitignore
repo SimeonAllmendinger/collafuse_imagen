@@ -1,0 +1,13 @@
+# Virtual Environment
+venv
+
+# Data
+data/*
+
+# Configs
+configs/visualization/config_wandb.yaml
+
+
+
+# Utils
+*__pycache__*
