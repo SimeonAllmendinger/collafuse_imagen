@@ -1,0 +1,9 @@
+DEFAULT:
+  n_steps: 200
+  min_beta: 0.0001
+  max_beta: 0.02
+  image_chw: 
+    - 1
+    - 28
+    - 28
+  path_save_model: ddpm_mnist.pt

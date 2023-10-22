@@ -1,0 +1,3 @@
+DEFAULT:
+  n_steps: 1000
+  time_emb_dim: 100
