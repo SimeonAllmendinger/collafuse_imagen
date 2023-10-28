@@ -26,7 +26,7 @@ SETTINGS.logger.info(f'Available devices: {torch.cuda.device_count()}')
 SETTINGS.logger.info(f'Using general device: {device}\t' + (f'{torch.cuda.get_device_name(0)}' if torch.cuda.is_available() else 'cpu'))
 
 clients=dict()
-for i, dataset_function in enumerate([MNIST]): #!, FashionMNIST]):
+for i, dataset_function in enumerate([MNIST, FashionMNIST]):
     client = Client(idx=(i+1), device=device, dataset_function=dataset_function, image_chw=SETTINGS.diffusion_model['DEFAULT']['image_chw'])
     clients[client.id] = client
 cloud=Cloud(device=device)

@@ -1,35 +1,31 @@
+from src.components.utils.settings import Settings
+from src.components.utils import functions as func
+from src.components.model.unet import Unet
+from src.components.visualization.display_images import show_images
+from denoising_diffusion_pytorch.fid_evaluation import FIDEvaluation
+from denoising_diffusion_pytorch.version import __version__
+from ema_pytorch import EMA
+from torch.optim import Adam
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms as T, utils
+from torch.cuda.amp import autocast
+from datetime import datetime
+import torch.nn as nn
+import torch.nn.functional as F
+import torch
+from tqdm.auto import tqdm
+from pathlib import Path
+from collections import namedtuple
+from accelerate import Accelerator
+from multiprocessing import cpu_count
+import wandb
+import numpy as np
+import math
+import einops
+import random
 import sys
 import os
 sys.path.append(os.path.abspath(os.curdir))
-
-import random
-import einops
-import math
-import numpy as np
-
-from multiprocessing import cpu_count
-from accelerate import Accelerator
-from collections import namedtuple
-from pathlib import Path
-from tqdm.auto import tqdm
-
-# pytorch
-import torch
-import torch.nn.functional as F
-import torch.nn as nn
-from torch.cuda.amp import autocast
-from torchvision import transforms as T, utils
-from torch.utils.data import Dataset, DataLoader
-from torch.optim import Adam
-from ema_pytorch import EMA
-
-from denoising_diffusion_pytorch.version import __version__
-from denoising_diffusion_pytorch.fid_evaluation import FIDEvaluation
-
-from src.components.visualization.display_images import show_images
-from src.components.model.unet import Unet
-from src.components.utils import functions as func
-from src.components.utils.settings import Settings
 
 
 # constants
@@ -43,6 +39,7 @@ SEED = 0
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
+
 
 def extract(a, t, x_shape):
     b, *_ = t.shape
@@ -90,6 +87,8 @@ def sigmoid_beta_schedule(timesteps, start=-3, end=3, tau=1, clamp_min=1e-5):
     return torch.clip(betas, 0, 0.999)
 
 # Diffusion model class
+
+
 class Diffusion_Model(nn.Module):
     def __init__(
         self,
@@ -111,13 +110,14 @@ class Diffusion_Model(nn.Module):
 
     ):
         super().__init__()
-        assert not (type(self) == Diffusion_Model and unet.channels != unet.out_dim)
+        assert not (
+            type(self) == Diffusion_Model and unet.channels != unet.out_dim)
         assert not unet.random_or_learned_sinusoidal_cond
 
         self.unet = unet
         self.channels = self.unet.channels
         self.self_condition = self.unet.self_condition
-        self.path_save_model=path_save_model
+        self.path_save_model = path_save_model
 
         self.image_channel, self.image_height, self.image_width = image_chw
 
@@ -157,7 +157,8 @@ class Diffusion_Model(nn.Module):
 
         # helper function to register buffer from float64 to float32
 
-        def register_buffer(name, val): return self.register_buffer(name, val.to(torch.float32))
+        def register_buffer(name, val): return self.register_buffer(
+            name, val.to(torch.float32))
 
         register_buffer('betas', betas)
         register_buffer('alphas_cumprod', alphas_cumprod)
@@ -407,7 +408,8 @@ class Diffusion_Model(nn.Module):
 
         # offset noise - https://www.crosslabs.org/blog/diffusion-with-offset-noise
 
-        offset_noise_strength = func.default(offset_noise_strength, self.offset_noise_strength)
+        offset_noise_strength = func.default(
+            offset_noise_strength, self.offset_noise_strength)
 
         if offset_noise_strength > 0.:
             offset_noise = torch.randn(x0.shape[:2], device=self.device)
@@ -421,7 +423,7 @@ class Diffusion_Model(nn.Module):
         )
 
     def p_losses(self, x, x0, t, noise):
-        
+
         # if doing self-conditioning, 50% of the time, predict x0 from current set of times
         # and condition with unet with that
         # this technique will slow down training by 25%, but seems to lower FID significantly
@@ -453,15 +455,17 @@ class Diffusion_Model(nn.Module):
         return loss.mean()
 
     def backward(self, noisy_imgs, imgs, t, noise, *args, **kwargs):
-        
+
         b, c, h, w = noisy_imgs.shape
         assert h == self.image_height and w == self.image_width, f'height and width of image must be {self.image_height} and {self.image_width}, but are {h} and {w}'
-        
+
         imgs = self.normalize(noisy_imgs)
-        
+
         return self.p_losses(x=noisy_imgs, x0=imgs, t=t, noise=noise, *args, **kwargs)
 
 # Diffusion trainer class
+
+
 class Diffusion_Trainer(object):
     def __init__(self,
                  clients: dict,
@@ -470,9 +474,9 @@ class Diffusion_Trainer(object):
                  batch_size: int,
                  t_cut_ratio: int,
                  loss_lambda: float,
+                 initial_loss: float,
                  *,
                  display=False,
-                 gradient_accumulate_every=1,
                  lr=1e-4,
                  adam_betas=(0.9, 0.99),
                  save_and_sample_every=1000,
@@ -491,6 +495,7 @@ class Diffusion_Trainer(object):
 
         # step counter state
         self.step = 0
+        self.initial_loss=initial_loss
 
         # FID-score computation
         self.calculate_fid = calculate_fid
@@ -502,21 +507,18 @@ class Diffusion_Trainer(object):
         self.save_best_and_latest_only = save_best_and_latest_only
 
         # sampling and training hyperparameters
-        assert func.has_int_squareroot(num_samples), 'number of samples must have an integer square root'
+        assert func.has_int_squareroot(
+            num_samples), 'number of samples must have an integer square root'
         self.num_samples = num_samples
         self.save_and_sample_every = save_and_sample_every
-
-        self.batch_size = batch_size
-        self.gradient_accumulate_every = gradient_accumulate_every
-        assert (batch_size * gradient_accumulate_every) >= 16, f'your effective batch size (batch_size x gradient_accumulate_every) should be at least 16 or above'
 
         self.max_grad_norm = max_grad_norm
         self.adam_betas = adam_betas
         self.results_folder = results_folder
         self.num_fid_samples = num_fid_samples
-        self.inception_block_idx=inception_block_idx
-        self.offset_noise_strength=offset_noise_strength
-        
+        self.inception_block_idx = inception_block_idx
+        self.offset_noise_strength = offset_noise_strength
+
         # Nodes
         self.clients = clients
         self.cloud = cloud
@@ -526,12 +528,13 @@ class Diffusion_Trainer(object):
         self.n_epochs = n_epochs
         self.batch_size = batch_size
         self.lr = lr
-        self.t_cut = int(np.round(self.cloud.diffusion_model.num_timesteps*t_cut_ratio))
+        self.t_cut = int(
+            np.round(self.cloud.diffusion_model.num_timesteps*t_cut_ratio))
         self.loss_lambda = loss_lambda
 
         # Visualization
         self.display = display
-    
+
     def save(self, milestone, model, optimizer):
 
         data = {
@@ -546,7 +549,8 @@ class Diffusion_Trainer(object):
 
     def load(self, milestone):
 
-        data = torch.load(str(self.results_folder / f'model-{milestone}.pt'), map_location=device)
+        data = torch.load(
+            str(self.results_folder / f'model-{milestone}.pt'), map_location=device)
 
         model = self.accelerator.unwrap_model(self.model)
         model.load_state_dict(data['model'])
@@ -561,57 +565,69 @@ class Diffusion_Trainer(object):
 
         if func.exists(self.accelerator.scaler) and func.exists(data['scaler']):
             self.accelerator.scaler.load_state_dict(data['scaler'])
-            
+
     def train(self):
+
+        # 1. Start a W&B Run
+        self.run = wandb.init(
+            project="distributed_genai",
+            notes="This experiment will train distributed diffusion models to investigate the effectiveness regarding information inclosure, performance and resources",
+            tags=["debug"],
+            name=f'train_{datetime.now().strftime("%I:%M%p_%m-%d-%Y")}'
+        )
         
-        self.cloud.optimizer = Adam(self.cloud.diffusion_model.parameters(), lr = self.lr, betas = self.adam_betas)
+        #  Capture a dictionary of the hyperparameters
+        wandb.config['TRAINER'] = SETTINGS.diffusion_trainer
+        wandb.config['DIFFUSION_MODEL'] = SETTINGS.diffusion_model
+        wandb.config['UNET'] = SETTINGS.unet
+
+        self.cloud.optimizer = Adam(self.cloud.diffusion_model.parameters(), lr=self.lr, betas=self.adam_betas)
+        self.cloud.energy_resources=0
         
+        max_ds_length = 0
+        client_id_list = []
+
+        for client_id, client in self.clients.items():
+            client.set_dl(batch_size=self.batch_size)
+
+            client.optimizer = Adam(client.diffusion_model.parameters(), self.lr, betas=self.adam_betas)
+            client.loss = self.initial_loss
+            client.energy_resources = 0
+            
+            if len(client.ds_train) > max_ds_length:
+                max_ds_length = len(client.ds_train)
+            
+            client_id_list.append(client_id)
+
         for epoch in tqdm(range(self.n_epochs), desc=f"Training progress", colour="#00ff00", disable=False):
 
             epoch_loss = 0.0
             random.shuffle(list(self.clients.keys()))
 
-            for id, client in self.clients.items():
-                client.set_dl(batch_size=self.batch_size)
+            for train_step in tqdm(range(max_ds_length), leave=False, desc=f"Epoch {epoch + 1}/{self.n_epochs}", colour="#005500"):
                 
-                client.optimizer = Adam(client.diffusion_model.parameters(), self.lr, betas = self.adam_betas)
-                
-                if self.calculate_fid:
-                    if not client.diffusion_model.is_ddim_sampling:
-                        SETTINGS.logger.warning(
-                            "WARNING: Robust FID computation requires a lot of generated samples and can therefore be very time consuming."
-                            "Consider using DDIM sampling to save time."
-                        )
-                    self.fid_scorer = FIDEvaluation(
-                        batch_size=self.batch_size,
-                        dl=client.dl,
-                        sampler=client.diffusion_model,
-                        channels=client.diffusion_model.channels,
-                        stats_dir=self.results_folder,
-                        device=client.diffusion_model.device,
-                        num_fid_samples=self.num_fid_samples,
-                        inception_block_idx=self.inception_block_idx
-                    )
-                
-                for k_batch, batch in enumerate(tqdm(client.dl_train, leave=False, desc=f"Epoch {epoch + 1}/{self.n_epochs}", colour="#005500")):
-                    
+                for client_id, client in self.clients.items():
                     total_loss = 0
+
+                    SETTINGS.logger.debug(f'dl_iter: {next(client.dl_train)}')
                     
                     # Loading data
-                    client.x0 = batch[0].to(client.diffusion_model.device)
+                    img_batch, _ = next(iter(client.dl_train))
+                    client.x0 = img_batch.to(client.diffusion_model.device)
                     client.n = len(client.x0)
-                    
+
                     # Picking some noise for each of the images in the batch, a timestep and the respective alpha_bars
                     # randn_like() returns a tensor with the same size as input that is filled with random numbers from a normal distribution with mean 0 and variance 1.
                     client.eta = torch.randn_like(client.x0).to(client.diffusion_model.device)
-                    t = torch.randint(0, client.diffusion_model.num_timesteps, (client.n,), device=client.diffusion_model.device).long()
-                    
+                    t = torch.randint(0, client.diffusion_model.num_timesteps,
+                                        (client.n,), device=client.diffusion_model.device).long()
+
                     SETTINGS.logger.debug(f't shape: {t.shape}')
 
                     # Computing the noisy image based on x0 and the time-step (forward process)
-                    client.noisy_imgs = client.diffusion_model(x0=client.x0, 
-                                                                t=t, 
-                                                                noise=client.eta, 
+                    client.noisy_imgs = client.diffusion_model(x0=client.x0,
+                                                                t=t,
+                                                                noise=client.eta,
                                                                 offset_noise_strength=self.offset_noise_strength)
 
                     # Getting model estimation of noise based on the images and the time-step
@@ -619,34 +635,41 @@ class Diffusion_Trainer(object):
                     self.cloud.t_reshape = self.cloud.t.reshape(-1).long()
                     client.t = t[t >= self.t_cut]
                     client.t_reshape = client.t.reshape(-1).long()
-                    
-                    SETTINGS.logger.debug(f'client x0 shape: {client.x0.shape}')
-                    SETTINGS.logger.debug(f'client t_reshape shape: {client.t_reshape.shape}')
-                    SETTINGS.logger.debug(f'cloud t_reshape shape: {self.cloud.t_reshape.shape}')
 
-                    self.cloud.loss = self.cloud.diffusion_model.backward(noisy_imgs=client.noisy_imgs[:self.cloud.t.shape[0]], 
-                                                                        imgs=client.x0[:self.cloud.t.shape[0]],
-                                                                        t=self.cloud.t_reshape,
-                                                                        noise=client.eta[:self.cloud.t.shape[0]])
+                    SETTINGS.logger.debug(
+                        f'client x0 shape: {client.x0.shape}')
+                    SETTINGS.logger.debug(
+                        f'client t_reshape shape: {client.t_reshape.shape}')
+                    SETTINGS.logger.debug(
+                        f'cloud t_reshape shape: {self.cloud.t_reshape.shape}')
+
+                    self.cloud.loss = self.cloud.diffusion_model.backward(noisy_imgs=client.noisy_imgs[:self.cloud.t.shape[0]],
+                                                                            imgs=client.x0[:self.cloud.t.shape[0]],
+                                                                            t=self.cloud.t_reshape,
+                                                                            noise=client.eta[:self.cloud.t.shape[0]])
                     client.loss = client.diffusion_model.backward(noisy_imgs=client.noisy_imgs[self.cloud.t.shape[0]:],
-                                                                        imgs=client.x0[self.cloud.t.shape[0]:],
-                                                                        t=client.t_reshape,
-                                                                        noise=client.eta[self.cloud.t.shape[0]:])
+                                                                    imgs=client.x0[self.cloud.t.shape[0]:],
+                                                                    t=client.t_reshape,
+                                                                    noise=client.eta[self.cloud.t.shape[0]:])
 
                     # Aggregate the loss of client and cloud model: lambda * client_loss + (1-lambda) * cloud_loss
-                    loss = (self.loss_lambda * client.loss + (1-self.loss_lambda) * self.cloud.loss) / self.gradient_accumulate_every
+                    loss = (self.loss_lambda * client.loss + (1-self.loss_lambda) * self.cloud.loss)
                     total_loss += loss.item()
+
+                    self.cloud.loss.backward()
+                    client.loss.backward()
                     
-                    client.optimizer.zero_grad()
-                    self.cloud.optimizer.zero_grad()
                     client.optimizer.step()
                     self.cloud.optimizer.step()
-                    
+                    client.optimizer.zero_grad()
+                    self.cloud.optimizer.zero_grad()
+
                     self.step += 1
                     # TODO: Calculate FID score
-                    
-                    if k_batch > 10:
-                        break
+
+                    # log metrics to wandb
+                    client_losses = {c_id:c_node.loss for c_id, c_node in self.clients.items()}
+                    wandb.log({"cloud loss": self.cloud.loss, "total loss": total_loss, **client_losses})
 
             epoch_loss += total_loss * client.n / len(client.ds_train)
 
@@ -667,9 +690,11 @@ class Diffusion_Trainer(object):
                 log_string += " --> Best model ever (stored)"
 
             SETTINGS.logger.info(log_string)
+    
+        wandb.finish()
 
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    diffusion_model = Diffusion_Model(unet=Unet(**SETTINGS.unet['DEFAULT']), 
-                                      device=device, 
+    diffusion_model = Diffusion_Model(unet=Unet(**SETTINGS.unet['DEFAULT']),
+                                      device=device,
                                       **SETTINGS.diffusion_model['DEFAULT'])
