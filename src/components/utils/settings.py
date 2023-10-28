@@ -21,9 +21,9 @@ class Settings():
         self.logger.debug(f'BASE_PATH: {self.base["PATH_BASE_DIR"]}')
         
         # Models
-        self.ddpm = _get_config_(path=os.path.join(self.base['PATH_BASE_DIR'],'configs/model/config_ddpm.yaml'))
+        self.diffusion_model = _get_config_(path=os.path.join(self.base['PATH_BASE_DIR'],'configs/model/config_diffusion_model.yaml'))
         self.unet = _get_config_(path=os.path.join(self.base['PATH_BASE_DIR'],'configs/model/config_unet.yaml'))
-        self.ddpm_trainer = _get_config_(path=os.path.join(self.base['PATH_BASE_DIR'],'configs/model/config_ddpm_trainer.yaml'))
+        self.diffusion_trainer = _get_config_(path=os.path.join(self.base['PATH_BASE_DIR'],'configs/model/config_diffusion_trainer.yaml'))
         
         # Visualization tools
         self.wandb = _get_config_(path=os.path.join(self.base['PATH_BASE_DIR'],'configs/visualization/config_wandb.yaml'))
@@ -55,7 +55,7 @@ def get_main_working_directory(name):
 
 def main():
     SETTINGS = Settings()
-    SETTINGS.logger.info(SETTINGS.imagen)
+    SETTINGS.logger.info(SETTINGS.ddpm)
 
 if __name__ == '__main__':
     main()

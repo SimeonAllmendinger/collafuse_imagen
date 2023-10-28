@@ -1,7 +1,7 @@
 import torch
 
 from src.components.utils.settings import Settings
-from src.components.model.ddpm import DDPM
+from components.model.diffusion import DDPM
 from src.components.model.unet import UNet
 from src.components.visualization.display_images import show_images
 

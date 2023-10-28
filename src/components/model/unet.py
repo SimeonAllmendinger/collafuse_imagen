@@ -1,140 +1,353 @@
+import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-def sinusoidal_embedding(n, d):
-    # Returns the standard positional embedding
-    embedding = torch.zeros(n, d)
-    wk = torch.tensor([1 / 10_000 ** (2 * j / d) for j in range(d)])
-    wk = wk.reshape((1, d))
-    t = torch.arange(n).reshape((n, 1))
-    embedding[:,::2] = torch.sin(t * wk[:,::2])
-    embedding[:,1::2] = torch.cos(t * wk[:,::2])
+from einops import rearrange, reduce, repeat
+from einops.layers.torch import Rearrange
 
-    return embedding
+from functools import partial
+
+from denoising_diffusion_pytorch.attend import Attend
+
+from src.components.utils.settings import Settings
+from src.components.utils import functions as func
 
 
-class Block(nn.Module):
-    def __init__(self, shape, in_c, out_c, kernel_size=3, stride=1, padding=1, activation=None, normalize=True):
-        super(Block, self).__init__()
-        self.ln = nn.LayerNorm(shape)
-        self.conv1 = nn.Conv2d(in_c, out_c, kernel_size, stride, padding)
-        self.conv2 = nn.Conv2d(out_c, out_c, kernel_size, stride, padding)
-        self.activation = nn.SiLU() if activation is None else activation
-        self.normalize = normalize
+# small helper modules
+
+def Upsample(dim, dim_out = None):
+    return nn.Sequential(
+        nn.Upsample(scale_factor = 2, mode = 'nearest'),
+        nn.Conv2d(dim, func.default(dim_out, dim), 3, padding = 1)
+    )
+
+def Downsample(dim, dim_out = None):
+    return nn.Sequential(
+        Rearrange('b c (h p1) (w p2) -> b (c p1 p2) h w', p1 = 2, p2 = 2),
+        nn.Conv2d(dim * 4, func.default(dim_out, dim), 1)
+    )
+
+class RMSNorm(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.g = nn.Parameter(torch.ones(1, dim, 1, 1))
 
     def forward(self, x):
-        out = self.ln(x) if self.normalize else x
-        out = self.conv1(out)
-        out = self.activation(out)
-        out = self.conv2(out)
-        out = self.activation(out)
-        return out
+        return F.normalize(x, dim = 1) * self.g * (x.shape[1] ** 0.5)
 
-    
-class UNet(nn.Module):
-    def __init__(self, n_steps: int, time_emb_dim: int):
-        super(UNet, self).__init__()
+# sinusoidal positional embeds
 
-        # Sinusoidal embedding
-        self.time_embed = nn.Embedding(n_steps, time_emb_dim)
-        self.time_embed.weight.data = sinusoidal_embedding(n_steps, time_emb_dim)
-        self.time_embed.requires_grad_(False)
+class SinusoidalPosEmb(nn.Module):
+    def __init__(self, dim, theta = 10000):
+        super().__init__()
+        self.dim = dim
+        self.theta = theta
 
-        # First half
-        self.te1 = self._make_te(dim_in=time_emb_dim, dim_out=1)
-        self.b1 = nn.Sequential(
-            Block((1, 28, 28), 1, 10),
-            Block((10, 28, 28), 10, 10),
-            Block((10, 28, 28), 10, 10)
-        )
-        self.down1 = nn.Conv2d(10, 10, 4, 2, 1)
+    def forward(self, x):
+        device = x.device
+        half_dim = self.dim // 2
+        emb = math.log(self.theta) / (half_dim - 1)
+        emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
+        emb = x[:, None] * emb[None, :]
+        emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
+        return emb
 
-        self.te2 = self._make_te(time_emb_dim, 10)
-        self.b2 = nn.Sequential(
-            Block((10, 14, 14), 10, 20),
-            Block((20, 14, 14), 20, 20),
-            Block((20, 14, 14), 20, 20)
-        )
-        self.down2 = nn.Conv2d(20, 20, 4, 2, 1)
+class RandomOrLearnedSinusoidalPosEmb(nn.Module):
+    """ following @crowsonkb 's lead with random (learned optional) sinusoidal pos emb """
+    """ https://github.com/crowsonkb/v-diffusion-jax/blob/master/diffusion/models/danbooru_128.py#L8 """
 
-        self.te3 = self._make_te(time_emb_dim, 20)
-        self.b3 = nn.Sequential(
-            Block((20, 7, 7), 20, 40),
-            Block((40, 7, 7), 40, 40),
-            Block((40, 7, 7), 40, 40)
-        )
-        self.down3 = nn.Sequential(
-            nn.Conv2d(40, 40, 2, 1),
+    def __init__(self, dim, is_random = False):
+        super().__init__()
+        assert func.divisible_by(dim, 2)
+        half_dim = dim // 2
+        self.weights = nn.Parameter(torch.randn(half_dim), requires_grad = not is_random)
+
+    def forward(self, x):
+        x = rearrange(x, 'b -> b 1')
+        freqs = x * rearrange(self.weights, 'd -> 1 d') * 2 * math.pi
+        fouriered = torch.cat((freqs.sin(), freqs.cos()), dim = -1)
+        fouriered = torch.cat((x, fouriered), dim = -1)
+        return fouriered
+
+
+# building block modules
+class Block(nn.Module):
+    def __init__(self, dim, dim_out, groups = 8):
+        super().__init__()
+        self.proj = nn.Conv2d(dim, dim_out, 3, padding = 1)
+        self.norm = nn.GroupNorm(groups, dim_out)
+        self.act = nn.SiLU()
+
+    def forward(self, x, scale_shift = None):
+        x = self.proj(x)
+        x = self.norm(x)
+
+        if func.exists(scale_shift):
+            scale, shift = scale_shift
+            x = x * (scale + 1) + shift
+
+        x = self.act(x)
+        return x
+
+class ResnetBlock(nn.Module):
+    def __init__(self, dim, dim_out, *, time_emb_dim = None, groups=8):
+        super().__init__()
+        self.mlp = nn.Sequential(
             nn.SiLU(),
-            nn.Conv2d(40, 40, 4, 2, 1)
+            nn.Linear(time_emb_dim, dim_out * 2)
+        ) if func.exists(time_emb_dim) else None
+
+        self.block1 = Block(dim=dim, dim_out=dim_out, groups=groups)
+        self.block2 = Block(dim_out, dim_out, groups=groups)
+        self.res_conv = nn.Conv2d(dim, dim_out, 1) if dim != dim_out else nn.Identity()
+
+    def forward(self, x, time_emb = None):
+
+        scale_shift = None
+        if func.exists(self.mlp) and func.exists(time_emb):
+            time_emb = self.mlp(time_emb)
+            time_emb = rearrange(time_emb, 'b c -> b c 1 1')
+            scale_shift = time_emb.chunk(2, dim = 1)
+
+        h = self.block1(x, scale_shift = scale_shift)
+
+        h = self.block2(h)
+
+        return h + self.res_conv(x)
+
+class LinearAttention(nn.Module):
+    def __init__(
+        self,
+        dim,
+        heads = 4,
+        dim_head = 32,
+        num_mem_kv = 4
+    ):
+        super().__init__()
+        self.scale = dim_head ** -0.5
+        self.heads = heads
+        hidden_dim = dim_head * heads
+
+        self.norm = RMSNorm(dim)
+
+        self.mem_kv = nn.Parameter(torch.randn(2, heads, dim_head, num_mem_kv))
+        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias = False)
+
+        self.to_out = nn.Sequential(
+            nn.Conv2d(hidden_dim, dim, 1),
+            RMSNorm(dim)
         )
 
-        # Bottleneck
-        self.te_mid = self._make_te(time_emb_dim, 40)
-        self.b_mid = nn.Sequential(
-            Block((40, 3, 3), 40, 20),
-            Block((20, 3, 3), 20, 20),
-            Block((20, 3, 3), 20, 40)
+    def forward(self, x):
+        b, c, h, w = x.shape
+
+        x = self.norm(x)
+
+        qkv = self.to_qkv(x).chunk(3, dim = 1)
+        q, k, v = map(lambda t: rearrange(t, 'b (h c) x y -> b h c (x y)', h = self.heads), qkv)
+
+        mk, mv = map(lambda t: repeat(t, 'h c n -> b h c n', b = b), self.mem_kv)
+        k, v = map(partial(torch.cat, dim = -1), ((mk, k), (mv, v)))
+
+        q = q.softmax(dim = -2)
+        k = k.softmax(dim = -1)
+
+        q = q * self.scale
+
+        context = torch.einsum('b h d n, b h e n -> b h d e', k, v)
+
+        out = torch.einsum('b h d e, b h d n -> b h e n', context, q)
+        out = rearrange(out, 'b h c (x y) -> b (h c) x y', h = self.heads, x = h, y = w)
+        return self.to_out(out)
+
+class Attention(nn.Module):
+    def __init__(
+        self,
+        dim,
+        heads = 4,
+        dim_head = 32,
+        num_mem_kv = 4,
+        flash = False
+    ):
+        super().__init__()
+        self.heads = heads
+        hidden_dim = dim_head * heads
+
+        self.norm = RMSNorm(dim)
+        self.attend = Attend(flash = flash)
+
+        self.mem_kv = nn.Parameter(torch.randn(2, heads, num_mem_kv, dim_head))
+        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias = False)
+        self.to_out = nn.Conv2d(hidden_dim, dim, 1)
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+
+        x = self.norm(x)
+
+        qkv = self.to_qkv(x).chunk(3, dim = 1)
+        q, k, v = map(lambda t: rearrange(t, 'b (h c) x y -> b h (x y) c', h = self.heads), qkv)
+
+        mk, mv = map(lambda t: repeat(t, 'h n d -> b h n d', b = b), self.mem_kv)
+        k, v = map(partial(torch.cat, dim = -2), ((mk, k), (mv, v)))
+
+        out = self.attend(q, k, v)
+
+        out = rearrange(out, 'b h (x y) d -> b (h d) x y', x = h, y = w)
+        return self.to_out(out)
+
+
+class Unet(nn.Module):
+    def __init__(
+        self,
+        dim,
+        init_dim = None,
+        out_dim = None,
+        dim_mults = (1, 2, 4, 8),
+        channels = 1,
+        self_condition = False,
+        resnet_block_groups = 8,
+        learned_variance = False,
+        learned_sinusoidal_cond = False,
+        random_fourier_features = False,
+        learned_sinusoidal_dim = 16,
+        sinusoidal_pos_emb_theta = 10000,
+        attn_dim_head = 32,
+        attn_heads = 4,
+        full_attn = None,    # defaults to full attention only for inner most layer
+        flash_attn = False
+    ):
+        super().__init__()
+
+        # determine dimensions
+        self.channels = channels
+        self.self_condition = self_condition
+        input_channels = channels * (2 if self_condition else 1)
+
+        init_dim = func.default(init_dim, dim)
+        self.init_conv = nn.Conv2d(input_channels, init_dim, 7, padding = 3)
+
+        dims = [init_dim, *map(lambda m: dim * m, dim_mults)]
+        in_out = list(zip(dims[:-1], dims[1:]))
+
+        block_klass = partial(ResnetBlock, groups = resnet_block_groups)
+
+        # time embeddings
+        time_dim = dim * 4
+
+        self.random_or_learned_sinusoidal_cond = learned_sinusoidal_cond or random_fourier_features
+
+        if self.random_or_learned_sinusoidal_cond:
+            sinu_pos_emb = RandomOrLearnedSinusoidalPosEmb(learned_sinusoidal_dim, random_fourier_features)
+            fourier_dim = learned_sinusoidal_dim + 1
+        else:
+            sinu_pos_emb = SinusoidalPosEmb(dim, theta = sinusoidal_pos_emb_theta)
+            fourier_dim = dim
+
+        self.time_mlp = nn.Sequential(
+            sinu_pos_emb,
+            nn.Linear(fourier_dim, time_dim),
+            nn.GELU(),
+            nn.Linear(time_dim, time_dim)
         )
 
-        # Second half
-        self.up1 = nn.Sequential(
-            nn.ConvTranspose2d(40, 40, 4, 2, 1),
-            nn.SiLU(),
-            nn.ConvTranspose2d(40, 40, 2, 1)
-        )
+        # attention
+        if not full_attn:
+            full_attn = (*((False,) * (len(dim_mults) - 1)), True)
 
-        self.te4 = self._make_te(time_emb_dim, 80)
-        self.b4 = nn.Sequential(
-            Block((80, 7, 7), 80, 40),
-            Block((40, 7, 7), 40, 20),
-            Block((20, 7, 7), 20, 20)
-        )
+        num_stages = len(dim_mults)
+        full_attn  = func.cast_tuple(full_attn, num_stages)
+        attn_heads = func.cast_tuple(attn_heads, num_stages)
+        attn_dim_head = func.cast_tuple(attn_dim_head, num_stages)
 
-        self.up2 = nn.ConvTranspose2d(20, 20, 4, 2, 1)
-        self.te5 = self._make_te(time_emb_dim, 40)
-        self.b5 = nn.Sequential(
-            Block((40, 14, 14), 40, 20),
-            Block((20, 14, 14), 20, 10),
-            Block((10, 14, 14), 10, 10)
-        )
+        assert len(full_attn) == len(dim_mults)
 
-        self.up3 = nn.ConvTranspose2d(10, 10, 4, 2, 1)
-        self.te_out = self._make_te(time_emb_dim, 20)
-        self.b_out = nn.Sequential(
-            Block((20, 28, 28), 20, 10),
-            Block((10, 28, 28), 10, 10),
-            Block((10, 28, 28), 10, 10, normalize=False)
-        )
+        FullAttention = partial(Attention, flash = flash_attn)
 
-        self.conv_out = nn.Conv2d(10, 1, 3, 1, 1)
+        # layers
+        self.downs = nn.ModuleList([])
+        self.ups = nn.ModuleList([])
+        num_resolutions = len(in_out)
 
-    def forward(self, x: torch.Tensor, t: int) -> torch.Tensor:
-        # x is (N, 2, 28, 28) (image with positional embedding stacked on channel dimension)
-        t = self.time_embed(t)
-        n = len(x)
-        out1 = self.b1(x + self.te1(t).reshape(n, -1, 1, 1))  # (N, 10, 28, 28)
-        out2 = self.b2(self.down1(out1) + self.te2(t).reshape(n, -1, 1, 1))  # (N, 20, 14, 14)
-        out3 = self.b3(self.down2(out2) + self.te3(t).reshape(n, -1, 1, 1))  # (N, 40, 7, 7)
+        for ind, ((dim_in, dim_out), layer_full_attn, layer_attn_heads, layer_attn_dim_head) in enumerate(zip(in_out, full_attn, attn_heads, attn_dim_head)):
+            is_last = ind >= (num_resolutions - 1)
 
-        out_mid = self.b_mid(self.down3(out3) + self.te_mid(t).reshape(n, -1, 1, 1))  # (N, 40, 3, 3)
+            attn_klass = FullAttention if layer_full_attn else LinearAttention
 
-        out4 = torch.cat((out3, self.up1(out_mid)), dim=1)  # (N, 80, 7, 7)
-        out4 = self.b4(out4 + self.te4(t).reshape(n, -1, 1, 1))  # (N, 20, 7, 7)
+            self.downs.append(nn.ModuleList([
+                block_klass(dim_in, dim_in, time_emb_dim = time_dim),
+                block_klass(dim_in, dim_in, time_emb_dim = time_dim),
+                attn_klass(dim_in, dim_head = layer_attn_dim_head, heads = layer_attn_heads),
+                Downsample(dim_in, dim_out) if not is_last else nn.Conv2d(dim_in, dim_out, 3, padding = 1)
+            ]))
 
-        out5 = torch.cat((out2, self.up2(out4)), dim=1)  # (N, 40, 14, 14)
-        out5 = self.b5(out5 + self.te5(t).reshape(n, -1, 1, 1))  # (N, 10, 14, 14)
+        mid_dim = dims[-1]
+        self.mid_block1 = block_klass(mid_dim, mid_dim, time_emb_dim = time_dim)
+        self.mid_attn = FullAttention(mid_dim, heads = attn_heads[-1], dim_head = attn_dim_head[-1])
+        self.mid_block2 = block_klass(mid_dim, mid_dim, time_emb_dim = time_dim)
 
-        out = torch.cat((out1, self.up3(out5)), dim=1)  # (N, 20, 28, 28)
-        out = self.b_out(out + self.te_out(t).reshape(n, -1, 1, 1))  # (N, 1, 28, 28)
+        for ind, ((dim_in, dim_out), layer_full_attn, layer_attn_heads, layer_attn_dim_head) in enumerate(zip(*map(reversed, (in_out, full_attn, attn_heads, attn_dim_head)))):
+            is_last = ind == (len(in_out) - 1)
 
-        out = self.conv_out(out)
+            attn_klass = FullAttention if layer_full_attn else LinearAttention
 
-        return out
+            self.ups.append(nn.ModuleList([
+                block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
+                block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
+                attn_klass(dim_out, dim_head = layer_attn_dim_head, heads = layer_attn_heads),
+                Upsample(dim_out, dim_in) if not is_last else  nn.Conv2d(dim_out, dim_in, 3, padding = 1)
+            ]))
 
-    def _make_te(self, dim_in, dim_out) -> nn.Sequential:
-        return nn.Sequential(
-            nn.Linear(dim_in, dim_out),
-            nn.SiLU(),
-            nn.Linear(dim_out, dim_out)
-        )
+        default_out_dim = channels * (1 if not learned_variance else 2)
+        self.out_dim = func.default(out_dim, default_out_dim)
+
+        self.final_res_block = block_klass(dim * 2, dim, time_emb_dim = time_dim)
+        self.final_conv = nn.Conv2d(dim, self.out_dim, 1)
+
+    @property
+    def downsample_factor(self):
+        return 2 ** (len(self.downs) - 1)
+
+    def forward(self, x, time, x_self_cond = None):
+        assert all([func.divisible_by(d, self.downsample_factor) for d in x.shape[-2:]]), f'your input dimensions {x.shape[-2:]} need to be divisible by {self.downsample_factor}, given the unet'
+
+        if self.self_condition:
+            x_self_cond = func.default(x_self_cond, lambda: torch.zeros_like(x))
+            x = torch.cat((x_self_cond, x), dim = 1)
+
+        x = self.init_conv(x)
+        r = x.clone()
+
+        t = self.time_mlp(time)
+
+        h = []
+
+        for block1, block2, attn, downsample in self.downs:
+            x = block1(x, t)
+            h.append(x)
+
+            x = block2(x, t)
+            x = attn(x) + x
+            h.append(x)
+
+            x = downsample(x)
+
+        x = self.mid_block1(x, t)
+        x = self.mid_attn(x) + x
+        x = self.mid_block2(x, t)
+
+        for block1, block2, attn, upsample in self.ups:
+            x = torch.cat((x, h.pop()), dim = 1)
+            x = block1(x, t)
+
+            x = torch.cat((x, h.pop()), dim = 1)
+            x = block2(x, t)
+            x = attn(x) + x
+
+            x = upsample(x)
+
+        x = torch.cat((x, r), dim = 1)
+
+        x = self.final_res_block(x, t)
+        return self.final_conv(x)
