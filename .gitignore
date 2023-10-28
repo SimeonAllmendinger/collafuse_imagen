@@ -3,6 +3,7 @@ venv
 
 # Data
 data/*
+assets/*
 
 # Configs
 configs/visualization/config_wandb.yaml
@@ -11,3 +12,4 @@ configs/visualization/config_wandb.yaml
 
 # Utils
 *__pycache__*
+.vscode
