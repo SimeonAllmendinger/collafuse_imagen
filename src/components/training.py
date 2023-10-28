@@ -18,6 +18,13 @@ from src.components.model.diffusion import Diffusion_Trainer
 from src.components.nodes.client_node import Client
 from src.components.nodes.cloud_node import Cloud
 
+parser = argparse.ArgumentParser(
+                prog='DistributedGenAi',
+                epilog='For help refer to uerib@student.kit.edu')
+
+parser.add_argument('--path_data_dir',
+                    default='/home/stud01/distributedgenai/',
+                    help='PATH to data directory')
 
 SETTINGS = Settings()
 

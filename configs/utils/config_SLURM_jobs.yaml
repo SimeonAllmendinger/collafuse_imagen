@@ -1,0 +1,17 @@
+args:
+  time: 1:00:00                            # Wall clock time limit.
+  nodes: 1                                  # Number of nodes to be used.
+  ntasks: 2                                 # Number of tasks to be launched.
+  ntasks_per_node: 2                        # Maximum count (<= 28 and <= 40 resp.) of tasks per node.
+  cpus_per_task: 4                          # Number of CPUs required per (MPI-)task.
+  mem_per_gpu: 35000                        # Minimum Memory required per allocated GPU.
+  mail_type: ALL                            # Notify user by email when certain event types occur. Valid type values are NONE, BEGIN, END, FAIL, REQUEUE, A$
+  mail_user: 'simeon.allmendinger@fim-rc.de'     # The specified mail-address receives email notification of state changes as defined by --mail-type.
+  output: run_scripts/stdout.txt                # File in which job output is stored.
+  error: run_scripts/stderr.txt                 # File in which job error messages are stored.
+  job_name: DEBUG                            # Job name.
+  partition: gpu_8                          # Request a specific queue for the resource allocation.
+  gres: gpu:1                               # Number of gpus: gpu:3
+
+  job: salloc
+  #./scripts/run_training.sh
