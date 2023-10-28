@@ -14,3 +14,4 @@ configs/visualization/config_wandb.yaml
 *__pycache__*
 .vscode
 wandb
+**Python**

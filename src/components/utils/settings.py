@@ -26,7 +26,7 @@ class Settings():
         self.diffusion_trainer = _get_config_(path=os.path.join(self.base['PATH_BASE_DIR'],'configs/model/config_diffusion_trainer.yaml'))
         
         # Visualization tools
-        self.wandb = _get_config_(path=os.path.join(self.base['PATH_BASE_DIR'],'configs/visualization/config_wandb.yaml'))
+        #self.wandb = _get_config_(path=os.path.join(self.base['PATH_BASE_DIR'],'configs/visualization/config_wandb.yaml'))
         
 
 def _get_config_(path :str):
