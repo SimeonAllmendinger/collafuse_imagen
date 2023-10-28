@@ -1,7 +1,0 @@
-DEFAULT:
-  n_epochs: 20
-  lr: 0.001
-  display: False
-  batch_size: 128
-  t_cut_ratio: 0.5 
-  loss_alpha: 0.5

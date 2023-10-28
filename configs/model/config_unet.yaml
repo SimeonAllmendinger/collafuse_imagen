@@ -1,3 +1,21 @@
 DEFAULT:
-  n_steps: 1000
-  time_emb_dim: 100
+  dim: 16
+  init_dim: Null
+  out_dim: Null
+  dim_mults:
+  - 1
+  - 2
+  - 4
+  - 8
+  channels: 1
+  self_condition: False
+  resnet_block_groups: 8
+  learned_variance: False
+  learned_sinusoidal_cond: False
+  random_fourier_features: False
+  learned_sinusoidal_dim: 16
+  sinusoidal_pos_emb_theta: 10000
+  attn_dim_head: 32
+  attn_heads: 4
+  full_attn: Null                           # defaults to full attention only for inner most layer
+  flash_attn: False
