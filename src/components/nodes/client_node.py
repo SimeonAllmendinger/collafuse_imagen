@@ -52,7 +52,9 @@ class Dataset(Dataset):
         img = Image.open(path)
         return self.transform(img)
 
-
+def tmp_func(x):
+        return (x - 0.5) * 2
+    
 class Client(BaseNode):
     def __init__(self, 
                  idx: int,

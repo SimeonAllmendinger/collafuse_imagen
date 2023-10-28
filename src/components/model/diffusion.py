@@ -4,7 +4,6 @@ from src.components.model.unet import Unet
 from src.components.visualization.display_images import show_images
 from denoising_diffusion_pytorch.fid_evaluation import FIDEvaluation
 from denoising_diffusion_pytorch.version import __version__
-from ema_pytorch import EMA
 from torch.optim import Adam
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms as T, utils
@@ -16,7 +15,6 @@ import torch
 from tqdm.auto import tqdm
 from pathlib import Path
 from collections import namedtuple
-from accelerate import Accelerator
 from multiprocessing import cpu_count
 import wandb
 import numpy as np
