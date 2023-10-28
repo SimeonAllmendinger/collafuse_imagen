@@ -609,8 +609,6 @@ class Diffusion_Trainer(object):
                 for client_id, client in self.clients.items():
                     total_loss = 0
 
-                    SETTINGS.logger.debug(f'dl_iter: {next(client.dl_train)}')
-                    
                     # Loading data
                     img_batch, _ = next(iter(client.dl_train))
                     client.x0 = img_batch.to(client.diffusion_model.device)

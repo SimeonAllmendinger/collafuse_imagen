@@ -16,6 +16,8 @@ from src.components.nodes.base_node import BaseNode
 
 SETTINGS=Settings()
 
+def tmp_func(x):
+        return (x - 0.5) * 2
 class Dataset(Dataset):
     def __init__(
         self,
@@ -66,7 +68,7 @@ class Client(BaseNode):
         # Data Handling
         self.transform = T.Compose([
             T.ToTensor(),
-            T.Lambda(self.tmp_func),
+            T.Lambda(tmp_func),
             T.Resize(image_chw[1:],antialias=True),
             T.CenterCrop(image_chw[1]),
         ])
@@ -81,7 +83,3 @@ class Client(BaseNode):
         # Data Loader
         self.dl_train=DataLoader(self.ds_train, batch_size, shuffle=True, num_workers=0)
         self.dl_test=DataLoader(self.ds_test, batch_size, shuffle=True, num_workers=0)
-        
-    @classmethod
-    def tmp_func(x):
-        return (x - 0.5) * 2
