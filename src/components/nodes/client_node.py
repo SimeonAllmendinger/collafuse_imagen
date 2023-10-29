@@ -16,8 +16,6 @@ from src.components.nodes.base_node import BaseNode
 
 SETTINGS=Settings()
 
-def tmp_func(x):
-        return (x - 0.5) * 2
 class Dataset(Dataset):
     def __init__(
         self,
@@ -51,9 +49,6 @@ class Dataset(Dataset):
         path = self.paths[index]
         img = Image.open(path)
         return self.transform(img)
-
-def tmp_func(x):
-        return (x - 0.5) * 2
     
 class Client(BaseNode):
     def __init__(self, 
@@ -70,7 +65,7 @@ class Client(BaseNode):
         # Data Handling
         self.transform = T.Compose([
             T.ToTensor(),
-            T.Lambda(tmp_func),
+            T.Lambda(func.normalize_to_neg_one_to_one),
             T.Resize(image_chw[1:],antialias=True),
             T.CenterCrop(image_chw[1]),
         ])

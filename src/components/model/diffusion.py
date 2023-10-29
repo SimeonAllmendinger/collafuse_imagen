@@ -500,7 +500,7 @@ class Diffusion_Trainer(object):
 
         if save_best_and_latest_only:
             assert calculate_fid, "`calculate_fid` must be True to provide a means for model evaluation for `save_best_and_latest_only`."
-            self.best_fid = 1e10  # infinite
+            self.best_fid = float("inf")  # infinite
 
         self.save_best_and_latest_only = save_best_and_latest_only
 
@@ -526,44 +526,35 @@ class Diffusion_Trainer(object):
         self.n_epochs = n_epochs
         self.batch_size = batch_size
         self.lr = lr
-        self.t_cut = int(
-            np.round(self.cloud.diffusion_model.num_timesteps*t_cut_ratio))
+        self.t_cut = int(np.round(self.cloud.diffusion_model.num_timesteps * t_cut_ratio))
         self.loss_lambda = loss_lambda
 
         # Visualization
         self.display = display
 
-    def save(self, milestone, model, optimizer):
+    def save(self, path_save_model, model, optimizer):
 
         data = {
             'step': self.step,
             'model': model.state_dict,
-            'opt': optimizer.state_dict(),
-            'ema': self.ema.state_dict(),
-            'version': __version__
+            'opt': optimizer.state_dict()
         }
 
-        torch.save(data, str(self.results_folder / f'model-{milestone}.pt'))
+        torch.save(data, path_save_model)
 
-    def load(self, milestone):
+    def load(self, path_save_model, device):
 
-        data = torch.load(
-            str(self.results_folder / f'model-{milestone}.pt'), map_location=device)
-
-        model = self.accelerator.unwrap_model(self.model)
-        model.load_state_dict(data['model'])
-
+        data = torch.load(path_save_model, map_location=device)
         self.step = data['step']
-        self.opt.load_state_dict(data['opt'])
-        if self.accelerator.is_main_process:
-            self.ema.load_state_dict(data["ema"])
 
-        if 'version' in data:
-            print(f"loading from version {data['version']}")
-
-        if func.exists(self.accelerator.scaler) and func.exists(data['scaler']):
-            self.accelerator.scaler.load_state_dict(data['scaler'])
-
+        if 'CLOUD' in path_save_model:
+            self.cloud.diffusion_model.load_state_dict(data['model'])
+            self.cloud.optimizer.load_state_dict(data['opt'])
+        else:
+            client_id = 'CLIENT_' + path_save_model.split('_')[-1].strip('.pt')
+            self.clients[client_id].diffusion_model.load_state_dict(data['model'])
+            self.clients[client_id].optimizer.load_state_dict(data['opt'])
+            
     def train(self):
 
         # 1. Start a W&B Run
@@ -581,9 +572,9 @@ class Diffusion_Trainer(object):
 
         self.cloud.optimizer = Adam(self.cloud.diffusion_model.parameters(), lr=self.lr, betas=self.adam_betas)
         self.cloud.energy_resources=0
+        SETTINGS.logger.info(f'Cloud Device: {self.cloud.diffusion_model.device}')
         
         max_ds_length = 0
-        client_id_list = []
 
         for client_id, client in self.clients.items():
             client.set_dl(batch_size=self.batch_size)
@@ -595,14 +586,14 @@ class Diffusion_Trainer(object):
             if len(client.ds_train) > max_ds_length:
                 max_ds_length = len(client.ds_train)
             
-            client_id_list.append(client_id)
+            SETTINGS.logger.info(f'{client_id} Device: {client.diffusion_model.device}')
 
         for epoch in tqdm(range(self.n_epochs), desc=f"Training progress", colour="#00ff00", disable=False):
 
             epoch_loss = 0.0
             random.shuffle(list(self.clients.keys()))
 
-            for train_step in tqdm(range(max_ds_length), leave=False, desc=f"Epoch {epoch + 1}/{self.n_epochs}", colour="#005500"):
+            for train_step in tqdm(range(int(max_ds_length/self.batch_size)), leave=False, desc=f"Epoch {epoch + 1}/{self.n_epochs}", colour="#005500"):
                 
                 for client_id, client in self.clients.items():
                     total_loss = 0
@@ -632,12 +623,9 @@ class Diffusion_Trainer(object):
                     client.t = t[t >= self.t_cut]
                     client.t_reshape = client.t.reshape(-1).long()
 
-                    SETTINGS.logger.debug(
-                        f'client x0 shape: {client.x0.shape}')
-                    SETTINGS.logger.debug(
-                        f'client t_reshape shape: {client.t_reshape.shape}')
-                    SETTINGS.logger.debug(
-                        f'cloud t_reshape shape: {self.cloud.t_reshape.shape}')
+                    SETTINGS.logger.debug(f'client x0 shape: {client.x0.shape}')
+                    SETTINGS.logger.debug(f'client t_reshape shape: {client.t_reshape.shape}')
+                    SETTINGS.logger.debug(f'cloud t_reshape shape: {self.cloud.t_reshape.shape}')
 
                     self.cloud.loss = self.cloud.diffusion_model.backward(noisy_imgs=client.noisy_imgs[:self.cloud.t.shape[0]],
                                                                             imgs=client.x0[:self.cloud.t.shape[0]],
@@ -679,16 +667,159 @@ class Diffusion_Trainer(object):
             # Storing the model
             if self.best_loss > epoch_loss:
                 self.best_loss = epoch_loss
-                torch.save(client.diffusion_model.state_dict(),
-                           client.diffusion_model.path_save_model)
-                torch.save(self.cloud.diffusion_model.state_dict(),
-                           self.cloud.diffusion_model.path_save_model)
+                for client_id, client in self.clients.items():
+                    self.save(model=client.diffusion_model.state_dict(), 
+                              optimizer=client.optimizer,
+                              path_save_model=client.diffusion_model.path_save_model)
+                
+                    wandb.log_artifact(artifact_or_path=client.diffusion_model.path_save_model,
+                                        name=client_id)
+                    
+                self.save(model=self.cloud.diffusion_model.state_dict(),
+                           optimizer=self.cloud.optimizer,
+                           path_save_model=self.cloud.diffusion_model.path_save_model)
+                
+                wandb.log_artifact(artifact_or_path=self.cloud.diffusion_model.path_save_model,
+                                   name=self.cloud.id)
                 log_string += " --> Best model ever (stored)"
 
             SETTINGS.logger.info(log_string)
     
         wandb.finish()
 
+    def test(self):
+        
+        # 1. Start a W&B Run
+        self.run = wandb.init(
+            project="distributed_genai",
+            notes="This experiment will trest distributed diffusion models to investigate the effectiveness regarding information inclosure, performance and resources",
+            tags=["debug"],
+            name=f'test_{datetime.now().strftime("%I:%M%p_%m-%d-%Y")}'
+        )
+        
+        #  Capture a dictionary of the hyperparameters
+        wandb.config['TRAINER'] = SETTINGS.diffusion_trainer
+        wandb.config['DIFFUSION_MODEL'] = SETTINGS.diffusion_model
+        wandb.config['UNET'] = SETTINGS.unet
+
+        self.cloud.optimizer = Adam(self.cloud.diffusion_model.parameters(), lr=self.lr, betas=self.adam_betas)
+        self.cloud.energy_resources=0
+        SETTINGS.logger.info(f'{self.cloud.id} Device: {self.cloud.diffusion_model.device}')
+        
+        max_ds_length = 0
+
+        for client_id, client in self.clients.items():
+            client.set_dl(batch_size=self.batch_size)
+
+            client.optimizer = Adam(client.diffusion_model.parameters(), self.lr, betas=self.adam_betas)
+            client.loss = self.initial_loss
+            client.energy_resources = 0
+            
+            if len(client.ds_train) > max_ds_length:
+                max_ds_length = len(client.ds_train)
+                
+            SETTINGS.logger.info(f'{client_id} Device: {client.diffusion_model.device}')
+
+        for epoch in tqdm(range(self.n_epochs), desc=f"Training progress", colour="#00ff00", disable=False):
+
+            epoch_loss = 0.0
+            random.shuffle(list(self.clients.keys()))
+
+            for train_step in tqdm(range(int(max_ds_length/self.batch_size)), leave=False, desc=f"Epoch {epoch + 1}/{self.n_epochs}", colour="#005500"):
+                
+                for client_id, client in self.clients.items():
+                    total_loss = 0
+
+                    # Loading data
+                    img_batch, _ = next(iter(client.dl_train))
+                    client.x0 = img_batch.to(client.diffusion_model.device)
+                    client.n = len(client.x0)
+
+                    # Picking some noise for each of the images in the batch, a timestep and the respective alpha_bars
+                    # randn_like() returns a tensor with the same size as input that is filled with random numbers from a normal distribution with mean 0 and variance 1.
+                    client.eta = torch.randn_like(client.x0).to(client.diffusion_model.device)
+                    t = torch.randint(0, client.diffusion_model.num_timesteps,
+                                        (client.n,), device=client.diffusion_model.device).long()
+
+                    SETTINGS.logger.debug(f't shape: {t.shape}')
+
+                    # Computing the noisy image based on x0 and the time-step (forward process)
+                    client.noisy_imgs = client.diffusion_model(x0=client.x0,
+                                                                t=t,
+                                                                noise=client.eta,
+                                                                offset_noise_strength=self.offset_noise_strength)
+
+                    # Getting model estimation of noise based on the images and the time-step
+                    self.cloud.t = t[t < self.t_cut]
+                    self.cloud.t_reshape = self.cloud.t.reshape(-1).long()
+                    client.t = t[t >= self.t_cut]
+                    client.t_reshape = client.t.reshape(-1).long()
+
+                    SETTINGS.logger.debug(f'client x0 shape: {client.x0.shape}')
+                    SETTINGS.logger.debug(f'client t_reshape shape: {client.t_reshape.shape}')
+                    SETTINGS.logger.debug(f'cloud t_reshape shape: {self.cloud.t_reshape.shape}')
+
+                    self.cloud.loss = self.cloud.diffusion_model.backward(noisy_imgs=client.noisy_imgs[:self.cloud.t.shape[0]],
+                                                                            imgs=client.x0[:self.cloud.t.shape[0]],
+                                                                            t=self.cloud.t_reshape,
+                                                                            noise=client.eta[:self.cloud.t.shape[0]])
+                    client.loss = client.diffusion_model.backward(noisy_imgs=client.noisy_imgs[self.cloud.t.shape[0]:],
+                                                                    imgs=client.x0[self.cloud.t.shape[0]:],
+                                                                    t=client.t_reshape,
+                                                                    noise=client.eta[self.cloud.t.shape[0]:])
+
+                    # Aggregate the loss of client and cloud model: lambda * client_loss + (1-lambda) * cloud_loss
+                    loss = (self.loss_lambda * client.loss + (1-self.loss_lambda) * self.cloud.loss)
+                    total_loss += loss.item()
+
+                    self.cloud.loss.backward()
+                    client.loss.backward()
+                    
+                    client.optimizer.step()
+                    self.cloud.optimizer.step()
+                    client.optimizer.zero_grad()
+                    self.cloud.optimizer.zero_grad()
+
+                    self.step += 1
+                    # TODO: Calculate FID score
+
+                    # log metrics to wandb
+                    client_losses = {c_id:c_node.loss for c_id, c_node in self.clients.items()}
+                    wandb.log({"cloud loss": self.cloud.loss, "total loss": total_loss, **client_losses})
+
+            epoch_loss += total_loss * client.n / len(client.ds_train)
+
+            # Display images generated at this epoch
+            if self.display:
+                show_images(self.diffusion_model.generate_new_images(
+                    diffusion_model, device=device), f"Images generated at epoch {epoch + 1}")
+
+            log_string = f"Loss at epoch {epoch + 1}: {epoch_loss:.3f}"
+
+            # Storing the model
+            if self.best_loss > epoch_loss:
+                self.best_loss = epoch_loss
+                for client_id, client in self.clients.items():
+                    self.save(model=client.diffusion_model.state_dict(), 
+                              optimizer=client.optimizer,
+                              path_save_model=client.diffusion_model.path_save_model)
+                
+                    wandb.log_artifact(artifact_or_path=client.diffusion_model.path_save_model,
+                                        name=client_id)
+                    
+                self.save(model=self.cloud.diffusion_model.state_dict(),
+                           optimizer=self.cloud.optimizer,
+                           path_save_model=self.cloud.diffusion_model.path_save_model)
+                
+                wandb.log_artifact(artifact_or_path=self.cloud.diffusion_model.path_save_model,
+                                   name=self.cloud.id)
+                log_string += " --> Best model ever (stored)"
+
+            SETTINGS.logger.info(log_string)
+    
+        wandb.finish()
+        
+        
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     diffusion_model = Diffusion_Model(unet=Unet(**SETTINGS.unet['DEFAULT']),

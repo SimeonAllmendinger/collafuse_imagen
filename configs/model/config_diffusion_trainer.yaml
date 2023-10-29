@@ -11,7 +11,7 @@ DEFAULT:
   - 0.99
   save_and_sample_every: 1000
   num_samples: 25
-  results_folder: ./results
+  results_folder: ./src/assets/
   calculate_fid: False                  # whether to calculate fid during training
   inception_block_idx: 2048
   max_grad_norm: 1.
