@@ -1,12 +1,12 @@
 DEFAULT:
-  timesteps: 400                    # Number of steps is typically in the order of thousands
-  sampling_timesteps: 400           # Number of steps when sampling, if smaller than timesteps --> DDIM
+  timesteps: 20                    # Number of steps is typically in the order of thousands
+  sampling_timesteps: 20           # Number of steps when sampling, if smaller than timesteps --> DDIM
   image_chw: 
     - 1
-    - 32
-    - 32
+    - 16
+    - 16
   objective: pred_noise
-  beta_schedule: sigmoid
+  beta_schedule: cosine
   ddim_sampling_eta: 0.0
   auto_normalize: True
   offset_noise_strength: 0.0        # https://www.crosslabs.org/blog/diffusion-with-offset-noise

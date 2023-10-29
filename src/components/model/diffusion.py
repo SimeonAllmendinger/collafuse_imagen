@@ -639,59 +639,69 @@ class Diffusion_Trainer(object):
                     self.cloud.t_reshape = self.cloud.t.reshape(-1).long()
                     client.t = t[t >= self.t_cut]
                     client.t_reshape = client.t.reshape(-1).long()                   
-                    client.energy_usage['DIFFUSION_PROCESS'] = client.tracker.stop_task()
+                    client.energy_usage['DIFFUSION_PROCESS'] = client.tracker.stop_task(task_name='DIFFUSION_PROCESS')
 
                     SETTINGS.logger.debug(f'client x0 shape: {client.x0.shape}')
                     SETTINGS.logger.debug(f'client t_reshape shape: {client.t_reshape.shape}')
                     SETTINGS.logger.debug(f'cloud t_reshape shape: {self.cloud.t_reshape.shape}')
 
                     #* Cloud Denoising
-                    self.cloud.start_task('DENOISING_PROCESS')
+                    self.cloud.tracker.start_task('DENOISING_PROCESS')
                     self.cloud.loss = self.cloud.diffusion_model.backward(noisy_imgs=client.noisy_imgs[:self.cloud.t.shape[0]],
                                                                             imgs=client.x0[:self.cloud.t.shape[0]],
                                                                             t=self.cloud.t_reshape,
                                                                             noise=client.eta[:self.cloud.t.shape[0]])
-                    self.cloud.energy_usage['DENOISING_PROCESS'] = self.cloud.tracker.stop_task()
+                    self.cloud.energy_usage['DENOISING_PROCESS'] = self.cloud.tracker.stop_task(task_name='DENOISING_PROCESS')
                     
                     #* Client Denoising
-                    client.start_task('DENOISING_PROCESS')
+                    client.tracker.start_task('DENOISING_PROCESS')
                     client.loss = client.diffusion_model.backward(noisy_imgs=client.noisy_imgs[self.cloud.t.shape[0]:],
                                                                     imgs=client.x0[self.cloud.t.shape[0]:],
                                                                     t=client.t_reshape,
                                                                     noise=client.eta[self.cloud.t.shape[0]:])
-                    client.energy_usage['DENOISING_PROCESS'] = client.tracker.stop_task()
+                    client.energy_usage['DENOISING_PROCESS'] = client.tracker.stop_task(task_name='DENOISING_PROCESS')
 
                     # Aggregate the loss of client and cloud model: lambda * client_loss + (1-lambda) * cloud_loss
                     loss = (self.loss_lambda * client.loss + (1-self.loss_lambda) * self.cloud.loss)
                     total_loss += loss.item()
 
                     #* Cloud Update
-                    self.cloud.start_task('DDPM_UPDATE')
+                    self.cloud.tracker.start_task('DDPM_UPDATE')
                     self.cloud.loss.backward()
                     self.cloud.optimizer.step()
                     self.cloud.optimizer.zero_grad()
-                    self.cloud.energy_usage['DDPM_UPDATE'] = self.cloud.tracker.stop_task()
+                    self.cloud.energy_usage['DDPM_UPDATE'] = self.cloud.tracker.stop_task(task_name='DDPM_UPDATE')
                     
                     #* Client Update                 
-                    client.start_task('DDPM_UPDATE')
+                    client.tracker.start_task('DDPM_UPDATE')
                     client.loss.backward()
                     client.optimizer.step()
                     client.optimizer.zero_grad()
-                    client.energy_usage['DDPM_UPDATE'] = client.tracker.stop_task()
+                    client.energy_usage['DDPM_UPDATE'] = client.tracker.stop_task(task_name='DDPM_UPDATE')
                     
                     self.step += 1
                     # TODO: Calculate FID score
 
-                    # log metrics to wandb
-                    client_losses = {c_id:c_node.loss for c_id, c_node in self.clients.items()}
-                    wandb.log({"cloud loss": self.cloud.loss, "total loss": total_loss, **client_losses})
+                # log metrics to wandb
+                client_losses = {f'{c_id} loss':c_node.loss for c_id, c_node in self.clients.items()}
+                client_energy_diffusion_process = {f'{c_id} diffusion energy':c_node.energy_usage['DIFFUSION_PROCESS'].energy_consumed for c_id, c_node in self.clients.items()}
+                client_energy_denoising_process = {f'{c_id} denoising energy':c_node.energy_usage['DENOISING_PROCESS'].energy_consumed for c_id, c_node in self.clients.items()}
+                client_energy_ddpm_update = {f'{c_id} ddpm update':c_node.energy_usage['DDPM_UPDATE'].energy_consumed for c_id, c_node in self.clients.items()}
+                wandb.log({"cloud loss": self.cloud.loss, 
+                            "total loss": total_loss, 
+                            "cloud denoising energy": self.cloud.energy_usage['DENOISING_PROCESS'].energy_consumed,
+                            "cloud ddpm update energy": self.cloud.energy_usage['DDPM_UPDATE'].energy_consumed,
+                            **client_losses, 
+                            **client_energy_diffusion_process,
+                            **client_energy_denoising_process,
+                            **client_energy_ddpm_update,
+                            })
 
             epoch_loss += total_loss * client.n / len(client.ds_train)
 
             # Display images generated at this epoch
             if self.display:
-                show_images(self.diffusion_model.generate_new_images(
-                    diffusion_model, device=device), f"Images generated at epoch {epoch + 1}")
+                self.generate_images()
 
             log_string = f"Loss at epoch {epoch + 1}: {epoch_loss:.3f}"
 
@@ -734,6 +744,11 @@ class Diffusion_Trainer(object):
         wandb.config['UNET'] = SETTINGS.unet
         
         self.load()
+        self.generate_images()
+    
+        wandb.finish()
+    
+    def generate_images(self):
         
         sample_batch_size=SETTINGS.diffusion_trainer['GENERATION']['sample_batch_size']
         return_all_timesteps=SETTINGS.diffusion_trainer['GENERATION']['return_all_timesteps']
@@ -774,9 +789,6 @@ class Diffusion_Trainer(object):
                     img.save(image_save_path)
                 
                 wandb.log({f'Generated-Images-Table_{batch_idx}': wandb_table})
-    
-        wandb.finish()
-        
 
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

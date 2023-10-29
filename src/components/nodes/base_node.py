@@ -1,4 +1,5 @@
-from codecarbon import OfflineEmissionsTracker
+from codecarbon import EmissionsTracker
+from codecarbon.output import EmissionsData
 from collections import defaultdict
 
 from src.components.utils.settings import Settings
@@ -18,8 +19,8 @@ class BaseNode():
         SETTINGS.logger.info('Number of parameters:', sum([p.numel() for p in self.diffusion_model.parameters()]))
         
         # Resources
-        self.tracker = OfflineEmissionsTracker(country_iso_code='GER')
-        self.energy_usage = defaultdict(float)
+        self.tracker = EmissionsTracker()
+        self.energy_usage = defaultdict(EmissionsData)
     
     @property
     def id(self):
