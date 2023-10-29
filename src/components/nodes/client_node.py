@@ -32,7 +32,6 @@ class Dataset(Dataset):
 
         self.transform = T.Compose([
             T.Lambda(maybe_convert_fn),
-            T.Lambda(lambda x: (x - 0.5) * 2),
             T.RandomHorizontalFlip() if augment_horizontal_flip else nn.Identity(),
             T.Resize(image_size),
             T.CenterCrop(image_size),
@@ -65,7 +64,6 @@ class Client(BaseNode):
         # Data Handling
         self.transform = T.Compose([
             T.ToTensor(),
-            T.Lambda(func.normalize_to_neg_one_to_one),
             T.Resize(image_chw[1:],antialias=True),
             T.CenterCrop(image_chw[1]),
         ])

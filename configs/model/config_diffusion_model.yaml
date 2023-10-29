@@ -1,6 +1,6 @@
 DEFAULT:
   timesteps: 400                    # Number of steps is typically in the order of thousands
-  sampling_timesteps:               # Number of steps when sampling, if smaller than timesteps --> DDIM
+  sampling_timesteps: 400           # Number of steps when sampling, if smaller than timesteps --> DDIM
   image_chw: 
     - 1
     - 32

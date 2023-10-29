@@ -52,4 +52,5 @@ cloud=Cloud(device=device)
 # show_images(generated, "Images generated before training")
 
 diffusion_trainer = Diffusion_Trainer(clients=clients, cloud=cloud, **SETTINGS.diffusion_trainer['DEFAULT'])
-diffusion_trainer.train()
+# diffusion_trainer.train()
+diffusion_trainer.test()

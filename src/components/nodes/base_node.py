@@ -1,3 +1,6 @@
+from codecarbon import OfflineEmissionsTracker
+from collections import defaultdict
+
 from src.components.utils.settings import Settings
 from src.components.model.diffusion import Diffusion_Model
 from src.components.model.unet import Unet
@@ -13,6 +16,10 @@ class BaseNode():
         # Model
         self.diffusion_model=Diffusion_Model(unet=Unet(**SETTINGS.unet['DEFAULT']), device=device, path_save_model=f'./src/assets/diffusion_model_{self.id}.pt', **SETTINGS.diffusion_model['DEFAULT'])
         SETTINGS.logger.info('Number of parameters:', sum([p.numel() for p in self.diffusion_model.parameters()]))
+        
+        # Resources
+        self.tracker = OfflineEmissionsTracker(country_iso_code='GER')
+        self.energy_usage = defaultdict(float)
     
     @property
     def id(self):
