@@ -1,5 +1,5 @@
 args:
-  time: 1:00:00                            # Wall clock time limit.
+  time: 10:00:00                            # Wall clock time limit.
   nodes: 1                                  # Number of nodes to be used.
   ntasks: 2                                 # Number of tasks to be launched.
   ntasks_per_node: 2                        # Maximum count (<= 28 and <= 40 resp.) of tasks per node.
@@ -13,5 +13,5 @@ args:
   partition: gpu_8                          # Request a specific queue for the resource allocation.
   gres: gpu:1                               # Number of gpus: gpu:3
 
-  job: salloc
-  #./scripts/run_training.sh
+  job: ./run_scripts/run_training.sh
+  # salloc

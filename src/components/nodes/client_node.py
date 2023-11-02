@@ -58,7 +58,8 @@ class Client(BaseNode):
                  idx: int,
                  device, 
                  dataset_function,
-                 image_chw: int
+                 image_chw: int,
+                 path_data: str
                  ):
         
         id=f'CLIENT_{idx}'
@@ -73,8 +74,8 @@ class Client(BaseNode):
             T.CenterCrop(image_chw[1]),
         ])
         #self.transform=T.Compose([T.ToTensor(), T.Lambda(lambda x: (x - 0.5) * 2)], T.Resize(image_chw[1:]),)
-        self.ds_train=dataset_function("./data", download=True, train=True, transform=self.transform)
-        self.ds_test=dataset_function("./data", download=True, train=False, transform=self.transform)
+        self.ds_train=dataset_function(path_data + "./data", download=True, train=True, transform=self.transform)
+        self.ds_test=dataset_function(path_data + "./data", download=True, train=False, transform=self.transform)
         
         if torch.cuda.is_available():
             SETTINGS.logger.info(f'Current device name of {self.id}: {torch.cuda.get_device_name(device=device)}')

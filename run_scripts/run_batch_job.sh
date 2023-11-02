@@ -60,4 +60,4 @@ else
     
 fi
 
-queue
+squeue

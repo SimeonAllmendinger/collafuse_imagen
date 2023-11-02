@@ -27,6 +27,8 @@ parser.add_argument('--path_data_dir',
                     default='/home/stud01/distributedgenai/',
                     help='PATH to data directory')
 
+args = parser.parse_args()
+
 SETTINGS = Settings()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -35,7 +37,11 @@ SETTINGS.logger.info(f'Using general device: {device}\t' + (f'{torch.cuda.get_de
 
 clients=dict()
 for i, dataset_function in enumerate([MNIST, FashionMNIST]):
-    client = Client(idx=(i+1), device=device, dataset_function=dataset_function, image_chw=SETTINGS.diffusion_model['DEFAULT']['image_chw'])
+    client = Client(idx=(i+1), 
+                    device=device, 
+                    dataset_function=dataset_function, 
+                    image_chw=SETTINGS.diffusion_model['DEFAULT']['image_chw'],
+                    path_data=args.path_data_dir)
     clients[client.id] = client
 cloud=Cloud(device=device)
 
