@@ -5,6 +5,7 @@ venv
 # Data
 data/*
 src/assets/*
+results/*.png
 
 # Configs
 configs/visualization/config_wandb.yaml

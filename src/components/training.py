@@ -18,44 +18,55 @@ from src.components.visualization.display_images import show_first_batch, show_i
 from src.components.model.diffusion import Diffusion_Trainer
 from src.components.nodes.client_node import Client
 from src.components.nodes.cloud_node import Cloud
+from src.components.utils.data_slicer import slice
 
 parser = argparse.ArgumentParser(
                 prog='DistributedGenAi',
                 epilog='For help refer to uerib@student.kit.edu')
 
-parser.add_argument('--path_data_dir',
-                    default='/home/stud01/distributedgenai/',
+parser.add_argument('--path_tmp_dir',
+                    default='./',
                     help='PATH to data directory')
 
-args = parser.parse_args()
-
 SETTINGS = Settings()
+LOGGER=SETTINGS.logger()
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-SETTINGS.logger.info(f'Available devices: {torch.cuda.device_count()}')
-SETTINGS.logger.info(f'Using general device: {device}\t' + (f'{torch.cuda.get_device_name(0)}' if torch.cuda.is_available() else 'cpu'))
+def training(path_tmp_dir: str):
+    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    LOGGER.debug(f'Available devices: {torch.cuda.device_count()}')
+    LOGGER.info(f'Using general device: {device}\t' + (f'{torch.cuda.get_device_name(0)}' if torch.cuda.is_available() else 'cpu'))
 
-clients=dict()
-for i, dataset_function in enumerate([MNIST, FashionMNIST]):
-    client = Client(idx=(i+1), 
-                    device=device, 
-                    dataset_function=dataset_function, 
-                    image_chw=SETTINGS.diffusion_model['DEFAULT']['image_chw'],
-                    path_data=args.path_data_dir)
-    clients[client.id] = client
-cloud=Cloud(device=device)
+    clients = {}
+    n_clients = len(SETTINGS.clients)
+    image_chw = SETTINGS.diffusion_model['DEFAULT']['image_chw']
 
-# Optionally, show a batch of regular images
-#show_first_batch(collaborator.dl)
+    for i, (client_name, client_dict) in enumerate(SETTINGS.clients.items()):
+        n_train_items = SETTINGS.data[client_dict['dataset_name']]['n_train_items']
+        n_test_items = SETTINGS.data[client_dict['dataset_name']]['n_test_items']
+        
+        data_train_sample_interval = [int(n_train_items/(n_clients)*i) + 1 if i>0 else 1, int(n_train_items/(n_clients) * (i+1)) + 1]
+        data_test_sample_interval = [int(n_test_items/(n_clients)*i) + 1 if i>0 else 1, int(n_test_items/(n_clients) * (i+1)) + 1]
+        
+        client = Client(**client_dict, device=device, 
+                        image_chw=image_chw, 
+                        data_train_sample_interval=data_train_sample_interval,
+                        data_test_sample_interval=data_test_sample_interval,
+                        path_tmp_dir=path_tmp_dir)
+        
+        clients[client.id] = client
+        
+        LOGGER.info(f'{client_name} created with {len(client.ds_train)} train samples and {len(client.ds_test)} test samples')
+        
+    cloud = Cloud(device=device)
 
-# Defining model
-
-# Optionally, show the diffusion (forward) process
-# show_forward(ddpm, loader, device)
-
-# Optionally, show the denoising (backward) process 
-# generated = ddpm.generate_new_images(gif_name="before_training.gif")
-# show_images(generated, "Images generated before training")
-
-diffusion_trainer = Diffusion_Trainer(clients=clients, cloud=cloud, **SETTINGS.diffusion_trainer['DEFAULT'])
-diffusion_trainer.train()
+    diffusion_trainer = Diffusion_Trainer(clients=clients, cloud=cloud, **SETTINGS.diffusion_trainer['DEFAULT'])
+    diffusion_trainer.train()
+    
+if __name__ == '__main__':
+    args = parser.parse_args()
+    path_tmp_dir = args.path_tmp_dir
+    LOGGER.info(f'PATH_TMP_DIR: {path_tmp_dir}')
+    #slice(dataset_name='BraTS2020', is_training=True)
+    #slice(dataset_name='BraTS2020', is_training=False)
+    training(path_tmp_dir=path_tmp_dir)

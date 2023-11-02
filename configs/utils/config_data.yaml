@@ -1,0 +1,10 @@
+BraTS2020:
+  path_train_raw: data/BraTS2020/BraTS2020_TrainingData/RAW/
+  path_test_raw: data/BraTS2020/BraTS2020_ValidationData/RAW/
+  path_train_sliced: data/BraTS2020/BraTS2020_TrainingData/SLICED/
+  path_test_sliced: data/BraTS2020/BraTS2020_ValidationData/SLICED/
+  n_train_items: 369
+  n_test_items: 125
+  slice_min: 60
+  slice_max: 100
+  slice_axis: 2
