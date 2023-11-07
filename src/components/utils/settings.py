@@ -27,8 +27,7 @@ class Settings():
     def __init__(self):
         
         # Utils
-        self.__logger.debug(f'Master_Logger started')
-        self.__logger.info(f'BASE_PATH: {self.__base["PATH_BASE_DIR"]}')
+        self.__logger.debug(f'BASE_PATH: {self.__base["PATH_BASE_DIR"]}')
         
         # Models
         self.diffusion_model = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/model/config_diffusion_model.yaml'))

@@ -25,6 +25,10 @@ class BaseNode():
     @property
     def id(self):
         return self._id
+    
+    @property
+    def device(self):
+        return self.diffusion_model.device
 	
     @id.setter
     def id(self, id: str):

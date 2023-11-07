@@ -102,7 +102,7 @@ class Client(BaseNode):
         
         # Log the current device name if CUDA is available
         if torch.cuda.is_available():
-            LOGGER.info(f'Current device name of {self.id}: {torch.cuda.get_device_name(device=device)}')
+            LOGGER.info(f"Current device name of {self.id}: {device} | {torch.cuda.get_device_name(0)}" if torch.cuda.is_available() else 'cpu')
         
     def set_dl(self, batch_size: int, num_workers: int) -> DataLoader:
         """

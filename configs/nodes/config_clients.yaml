@@ -1,24 +1,24 @@
 CLIENT_1:
   idx: 1
   dataset_name: BraTS2020
-  t_cut_ratio: 0.25
+  t_cut_ratio: 0.20
 
 CLIENT_2:
   idx: 2
   dataset_name: BraTS2020
-  t_cut_ratio: 0.25
+  t_cut_ratio: 0.20
   
 CLIENT_3:
   idx: 3
   dataset_name: BraTS2020
-  t_cut_ratio: 0.25
+  t_cut_ratio: 0.20
 
-CLIENT_4:
-  idx: 4
-  dataset_name: BraTS2020
-  t_cut_ratio: 0.25
+# CLIENT_4:
+#   idx: 4
+#   dataset_name: BraTS2020
+#   t_cut_ratio: 0.20
 
-CLIENT_5:
-  idx: 5
-  dataset_name: BraTS2020
-  t_cut_ratio: 0.25
+# CLIENT_5:
+#   idx: 5
+#   dataset_name: BraTS2020
+#   t_cut_ratio: 0.20

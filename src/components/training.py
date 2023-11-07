@@ -33,22 +33,30 @@ LOGGER=SETTINGS.logger()
 
 def training(path_tmp_dir: str):
     
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    LOGGER.debug(f'Available devices: {torch.cuda.device_count()}')
-    LOGGER.info(f'Using general device: {device}\t' + (f'{torch.cuda.get_device_name(0)}' if torch.cuda.is_available() else 'cpu'))
+    LOGGER.info(f'Available GPU devices: {torch.cuda.device_count()}')
+    available_gpus = [torch.cuda.device(i) for i in range(torch.cuda.device_count())]
+    LOGGER.info(available_gpus)
 
     clients = {}
     n_clients = len(SETTINGS.clients)
     image_chw = SETTINGS.diffusion_model['DEFAULT']['image_chw']
+    client_device_idx = 1
 
     for i, (client_name, client_dict) in enumerate(SETTINGS.clients.items()):
+        
+        # define data intervals
         n_train_items = SETTINGS.data[client_dict['dataset_name']]['n_train_items']
         n_test_items = SETTINGS.data[client_dict['dataset_name']]['n_test_items']
         
         data_train_sample_interval = [int(n_train_items/(n_clients)*i) + 1 if i>0 else 1, int(n_train_items/(n_clients) * (i+1)) + 1]
         data_test_sample_interval = [int(n_test_items/(n_clients)*i) + 1 if i>0 else 1, int(n_test_items/(n_clients) * (i+1)) + 1]
         
-        client = Client(**client_dict, device=device, 
+        # device
+        client_device = torch.device(client_device_idx if torch.cuda.is_available() else 'cpu')
+        client_device_idx = client_device_idx+1 if client_device_idx < 3 else 1
+        
+        client = Client(**client_dict, 
+                        device=client_device, 
                         image_chw=image_chw, 
                         data_train_sample_interval=data_train_sample_interval,
                         data_test_sample_interval=data_test_sample_interval,
@@ -57,8 +65,9 @@ def training(path_tmp_dir: str):
         clients[client.id] = client
         
         LOGGER.info(f'{client_name} created with {len(client.ds_train)} train samples and {len(client.ds_test)} test samples')
-        
-    cloud = Cloud(device=device)
+    
+    cloud_device = torch.device(0 if torch.cuda.is_available() else 'cpu')
+    cloud = Cloud(device=cloud_device)
 
     diffusion_trainer = Diffusion_Trainer(clients=clients, cloud=cloud, **SETTINGS.diffusion_trainer['DEFAULT'])
     diffusion_trainer.train()
