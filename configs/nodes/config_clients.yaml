@@ -1,17 +1,17 @@
 CLIENT_1:
   idx: 1
   dataset_name: BraTS2020
-  t_cut_ratio: 0.20
+  t_cut_ratio: 1.00
 
 CLIENT_2:
   idx: 2
   dataset_name: BraTS2020
-  t_cut_ratio: 0.20
+  t_cut_ratio: 1.00
   
 CLIENT_3:
   idx: 3
   dataset_name: BraTS2020
-  t_cut_ratio: 0.20
+  t_cut_ratio: 1.00
 
 # CLIENT_4:
 #   idx: 4

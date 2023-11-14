@@ -1,9 +1,9 @@
 DEFAULT:
-  n_epochs: 100                         # total training steps
+  n_epochs: 300                         # total training steps
   lr: 0.001
   initial_loss: 1.5
-  display: True
-  batch_size: 32
+  display: False
+  batch_size: 150
   num_workers: 2 
   loss_lambda: 0.5
   adam_betas: 
@@ -12,13 +12,11 @@ DEFAULT:
   save_and_sample_every: 1000
   num_samples: 25
   results_folder: ./results/
-  calculate_fid: False                  # whether to calculate fid during training
-  inception_block_idx: 2048
-  max_grad_norm: 1.
-  num_fid_samples: 50000
-  save_best_and_latest_only: False
+  calculate_performance: True          # whether to calculate fid during training
   offset_noise_strength: 0
 
 GENERATION:
-  sample_batch_size: 1
-  return_all_timesteps: True
+  sample_batch_size: 150
+  n_samples: 4050
+  return_all_timesteps: False
+  create_new_samples: True

@@ -29,6 +29,10 @@ class BaseNode():
     @property
     def device(self):
         return self.diffusion_model.device
+    
+    @property
+    def image_chw(self):
+        return (self.diffusion_model.image_channel, self.diffusion_model.image_height, self.diffusion_model.image_width)
 	
     @id.setter
     def id(self, id: str):

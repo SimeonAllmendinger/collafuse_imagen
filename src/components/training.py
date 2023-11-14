@@ -14,7 +14,6 @@ import torch
 from torchvision.datasets.mnist import MNIST, FashionMNIST
 
 from src.components.utils.settings import Settings
-from src.components.visualization.display_images import show_first_batch, show_images
 from src.components.model.diffusion import Diffusion_Trainer
 from src.components.nodes.client_node import Client
 from src.components.nodes.cloud_node import Cloud
@@ -49,7 +48,7 @@ def training(path_tmp_dir: str):
         n_test_items = SETTINGS.data[client_dict['dataset_name']]['n_test_items']
         
         data_train_sample_interval = [int(n_train_items/(n_clients)*i) + 1 if i>0 else 1, int(n_train_items/(n_clients) * (i+1)) + 1]
-        data_test_sample_interval = [int(n_test_items/(n_clients)*i) + 1 if i>0 else 1, int(n_test_items/(n_clients) * (i+1)) + 1]
+        data_test_sample_interval = [1, int(n_test_items) + 1]
         
         # device
         client_device = torch.device(client_device_idx if torch.cuda.is_available() else 'cpu')
@@ -70,7 +69,8 @@ def training(path_tmp_dir: str):
     cloud = Cloud(device=cloud_device)
 
     diffusion_trainer = Diffusion_Trainer(clients=clients, cloud=cloud, **SETTINGS.diffusion_trainer['DEFAULT'])
-    diffusion_trainer.train()
+    #diffusion_trainer.train()
+    diffusion_trainer.test()
     
 if __name__ == '__main__':
     args = parser.parse_args()

@@ -8,6 +8,7 @@ import math
 import einops
 import random
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from torch.optim import Adam
 from torch.utils.data import Dataset, DataLoader
@@ -491,11 +492,7 @@ class Diffusion_Trainer(object):
                  save_and_sample_every=1000,
                  num_samples=25,
                  results_folder='./results',
-                 calculate_fid=True,
-                 inception_block_idx=2048,
-                 max_grad_norm=1.,
-                 num_fid_samples=50000,
-                 save_best_and_latest_only=False,
+                 calculate_performance=True,
                  offset_noise_strength=None,
                  ):
 
@@ -507,13 +504,7 @@ class Diffusion_Trainer(object):
         self.initial_loss=initial_loss
 
         # FID-score computation
-        self.calculate_fid = calculate_fid
-
-        if save_best_and_latest_only:
-            assert calculate_fid, "`calculate_fid` must be True to provide a means for model evaluation for `save_best_and_latest_only`."
-            self.best_fid = float("inf")  # infinite
-
-        self.save_best_and_latest_only = save_best_and_latest_only
+        self.calculate_performance = calculate_performance
 
         # sampling and training hyperparameters
         assert func.has_int_squareroot(
@@ -522,11 +513,8 @@ class Diffusion_Trainer(object):
         self.save_and_sample_every = save_and_sample_every
 
         # Parameters
-        self.max_grad_norm = max_grad_norm
         self.adam_betas = adam_betas
         self.results_folder = results_folder
-        self.num_fid_samples = num_fid_samples
-        self.inception_block_idx = inception_block_idx
         self.offset_noise_strength = offset_noise_strength
 
         # Nodes
@@ -585,11 +573,11 @@ class Diffusion_Trainer(object):
         data_cloud = torch.load(self.cloud.diffusion_model.path_save_model, 
                                 map_location=self.cloud.device)
         self.cloud.diffusion_model.load_state_dict(data_cloud['model'])
-        # TODO: self.cloud.optimizer.load_state_dict(data_cloud['opt'])
+        self.cloud.optimizer.load_state_dict(data_cloud['opt'])
         
         #* CLIENTS
         for client_id, client in self.clients.items():
-            data_client = torch.load(client.diffusion_model.path_save_model, 
+            data_client = torch.load(client.path_save_model, 
                                      map_location=client.device)
             client.diffusion_model.load_state_dict(data_client['model'])
             client.optimizer.load_state_dict(data_client['opt'])
@@ -602,7 +590,7 @@ class Diffusion_Trainer(object):
         self.run = wandb.init(
             project="distributed_genai",
             notes="This experiment will train distributed diffusion models to investigate the effectiveness regarding information inclosure, performance and resources",
-            tags=["debug", "train"],
+            tags=["ecis", "train", "experiment"],
             name=f'train_{datetime.now().strftime("%I:%M%p_%m-%d-%Y")}'
         )
         
@@ -654,56 +642,76 @@ class Diffusion_Trainer(object):
 
                     #* Cloud Denoising (from t_cut to T)
                     self.cloud.tracker.start_task('DENOISING_PROCESS')
-                    self.cloud.loss = self.cloud.diffusion_model.backward(noisy_imgs=client.noisy_imgs[client.t.shape[0]:].to(self.cloud.device),
-                                                                            imgs=client.x0.to(self.cloud.device),
-                                                                            t=self.cloud.t_reshape,
-                                                                            noise=client.eta[client.t.shape[0]:].to(self.cloud.device))
+                    if len(self.cloud.t) > 0:
+                        self.cloud.loss = self.cloud.diffusion_model.backward(noisy_imgs=client.noisy_imgs[client.t.shape[0]:].to(self.cloud.device),
+                                                                                imgs=client.x0.to(self.cloud.device),
+                                                                                t=self.cloud.t_reshape,
+                                                                                noise=client.eta[client.t.shape[0]:].to(self.cloud.device))
+                    else:
+                        self.cloud.loss = None
                     self.cloud.energy_usage['DENOISING_PROCESS'] = self.cloud.tracker.stop_task(task_name='DENOISING_PROCESS')
                     
                     #* Client Denoising (from zero to t_cut)
                     client.tracker.start_task('DENOISING_PROCESS')
-                    client.loss = client.diffusion_model.backward(noisy_imgs=client.noisy_imgs[:client.t.shape[0]],
-                                                                    imgs=client.x0,
-                                                                    t=client.t_reshape,
-                                                                    noise=client.eta[:client.t.shape[0]])
+                    if len(client.t) > 0:
+                        client.loss = client.diffusion_model.backward(noisy_imgs=client.noisy_imgs[:client.t.shape[0]],
+                                                                        imgs=client.x0,
+                                                                        t=client.t_reshape,
+                                                                        noise=client.eta[:client.t.shape[0]])
+                    else:
+                        client.loss = None
                     client.energy_usage['DENOISING_PROCESS'] = client.tracker.stop_task(task_name='DENOISING_PROCESS')
 
                     #* Cloud Update
                     self.cloud.tracker.start_task('DDPM_UPDATE')
-                    self.cloud.loss.backward()
-                    self.cloud.optimizer.step()
-                    self.cloud.optimizer.zero_grad()
+                    if self.cloud.loss:
+                        self.cloud.loss.backward()
+                        self.cloud.optimizer.step()
+                        self.cloud.optimizer.zero_grad()
                     self.cloud.energy_usage['DDPM_UPDATE'] = self.cloud.tracker.stop_task(task_name='DDPM_UPDATE')
                     
                     #* Client Update                 
                     client.tracker.start_task('DDPM_UPDATE')
-                    client.loss.backward()
-                    client.optimizer.step()
-                    client.optimizer.zero_grad()
+                    if client.loss:
+                        client.loss.backward()
+                        client.optimizer.step()
+                        client.optimizer.zero_grad()
                     client.energy_usage['DDPM_UPDATE'] = client.tracker.stop_task(task_name='DDPM_UPDATE')
                     
                     # Aggregate the loss of client and cloud model: lambda * client_loss + (1-lambda) * cloud_loss
-                    loss = (self.loss_lambda * client.loss + (1-self.loss_lambda) * self.cloud.loss.to(client.device))
+                    if self.cloud.loss and client.loss:
+                        loss = (self.loss_lambda * client.loss + (1-self.loss_lambda) * self.cloud.loss.to(client.device))
+                    elif self.cloud.loss:
+                        loss = self.cloud.loss
+                    elif client.loss:
+                        loss = client.loss
                     total_loss += loss.item()
                     self.step += 1
-                    # TODO: Calculate FID/KID score
 
                 # log metrics to wandb
                 client_losses = {f'{c_id} loss':c_node.loss for c_id, c_node in self.clients.items()}
                 client_energy_diffusion_process = {f'{c_id} diffusion energy':c_node.energy_usage['DIFFUSION_PROCESS'].energy_consumed for c_id, c_node in self.clients.items()}
                 client_energy_denoising_process = {f'{c_id} denoising energy':c_node.energy_usage['DENOISING_PROCESS'].energy_consumed for c_id, c_node in self.clients.items()}
                 client_energy_ddpm_update = {f'{c_id} ddpm update':c_node.energy_usage['DDPM_UPDATE'].energy_consumed for c_id, c_node in self.clients.items()}
+                client_gpu_power_diffusion_process = {f'{c_id} diffusion energy':c_node.energy_usage['DIFFUSION_PROCESS'].gpu_power for c_id, c_node in self.clients.items()}
+                client_gpu_power_denoising_process = {f'{c_id} denoising energy':c_node.energy_usage['DENOISING_PROCESS'].gpu_power for c_id, c_node in self.clients.items()}
+                client_gpu_power_ddpm_update = {f'{c_id} ddpm update':c_node.energy_usage['DDPM_UPDATE'].gpu_power for c_id, c_node in self.clients.items()}
                 wandb.log({"cloud loss": self.cloud.loss, 
                             "total loss": total_loss, 
                             "cloud denoising energy": self.cloud.energy_usage['DENOISING_PROCESS'].energy_consumed,
                             "cloud ddpm update energy": self.cloud.energy_usage['DDPM_UPDATE'].energy_consumed,
+                            "cloud denoising gpu power": self.cloud.energy_usage['DENOISING_PROCESS'].gpu_power,
+                            "cloud ddpm update gpu power": self.cloud.energy_usage['DDPM_UPDATE'].gpu_power,
                             **client_losses, 
                             **client_energy_diffusion_process,
                             **client_energy_denoising_process,
                             **client_energy_ddpm_update,
+                            **client_gpu_power_diffusion_process,
+                            **client_gpu_power_denoising_process,
+                            **client_gpu_power_ddpm_update,
                             })
 
-            epoch_loss += total_loss * client.n / len(client.ds_train)
+            epoch_loss = total_loss
 
             log_string = f"Loss at epoch {epoch + 1}: {epoch_loss:.3f}"
 
@@ -718,9 +726,9 @@ class Diffusion_Trainer(object):
                 for client_id, client in self.clients.items():
                     self.save(model=client.diffusion_model, 
                               optimizer=client.optimizer,
-                              path_save_model=client.diffusion_model.path_save_model)
+                              path_save_model=client.path_save_model)
                 
-                    wandb.log_artifact(artifact_or_path=client.diffusion_model.path_save_model,
+                    wandb.log_artifact(artifact_or_path=client.path_save_model,
                                         name=client_id)
                     
                 self.save(model=self.cloud.diffusion_model,
@@ -730,9 +738,24 @@ class Diffusion_Trainer(object):
                 wandb.log_artifact(artifact_or_path=self.cloud.diffusion_model.path_save_model,
                                    name=self.cloud.id)
                 log_string += " --> Best model ever (stored)"
+                LOGGER.info(log_string)
 
-            LOGGER.info(log_string)
-    
+        for client_id, client in self.clients.items():
+            self.save(model=client.diffusion_model, 
+                        optimizer=client.optimizer,
+                        path_save_model=client.path_save_model)
+        
+            wandb.log_artifact(artifact_or_path=client.path_save_model,
+                                name=client_id)
+            
+        self.save(model=self.cloud.diffusion_model,
+                    optimizer=self.cloud.optimizer,
+                    path_save_model=self.cloud.diffusion_model.path_save_model)
+        
+        wandb.log_artifact(artifact_or_path=self.cloud.diffusion_model.path_save_model,
+                            name=self.cloud.id)
+        log_string += " --> Best model ever (stored)"
+        
         wandb.finish()
 
     def test(self):
@@ -741,7 +764,7 @@ class Diffusion_Trainer(object):
         self.run = wandb.init(
             project="distributed_genai",
             notes="This experiment will trest distributed diffusion models to investigate the effectiveness regarding information inclosure, performance and resources",
-            tags=["debug", "test"],
+            tags=["ecis", "experiment", "test"],
             name=f'test_{datetime.now().strftime("%I:%M%p_%m-%d-%Y")}'
         )
         
@@ -751,54 +774,111 @@ class Diffusion_Trainer(object):
         wandb.config['UNET'] = SETTINGS.unet
         
         self.load()
-        self.generate_images()
+        #self.generate_images(testing=True)
+        
+        for client_id, client in self.clients.items():
+            client.compute_performance()
+            client.compute_information_disclosure()
+        
+        wandb.log({f'Performance {client_id}_train | KID' : client.kid_score_train  for client_id, client in self.clients.items()})
+        wandb.log({f'Performance {client_id}_test | KID' : client.kid_score_test  for client_id, client in self.clients.items()})
+        wandb.log({f'Information Disclosure {client_id}_train | KID' : client.kid_inf_dis_train  for client_id, client in self.clients.items()})
+        wandb.log({f'Information Disclosure {client_id}_test | KID' : client.kid_inf_dis_test  for client_id, client in self.clients.items()})
     
         wandb.finish()
     
-    def generate_images(self):
+    def generate_images(self, testing=False):
         
+        # Obtain SETTINGS
         sample_batch_size=SETTINGS.diffusion_trainer['GENERATION']['sample_batch_size']
         return_all_timesteps=SETTINGS.diffusion_trainer['GENERATION']['return_all_timesteps']
-        shape= (sample_batch_size, self.cloud.diffusion_model.channels, self.cloud.diffusion_model.image_height, self.cloud.diffusion_model.image_width)
-        noise_img = torch.randn(shape, device=self.cloud.device)
-
-        cloud_img_samples = self.cloud.diffusion_model.sample(batch_size=sample_batch_size,
-                                          t_min=0,
-                                          t_max=self.cloud.diffusion_model.num_timesteps,
-                                          noise_img=noise_img, 
-                                          return_all_timesteps=return_all_timesteps)
+        n_samples=SETTINGS.diffusion_trainer['GENERATION']['n_samples']
         
-        for client_id, client in self.clients.items():
-  
-            client_img_samples = client.diffusion_model.sample(batch_size=sample_batch_size,
-                                          t_min=0,
-                                          t_max=client.t_cut,
-                                          noise_img=cloud_img_samples[:,-client.t_cut,...].to(client.device) if return_all_timesteps else cloud_img_samples.to(client.device),
-                                          return_all_timesteps=return_all_timesteps)
+        for batch_k in range(int(np.ceil(n_samples/sample_batch_size))):
             
-            # Storing the images
-            img_samples=torch.cat([cloud_img_samples[:,:-client.t_cut,...].to(client.device), client_img_samples], dim=1)
-            for batch_idx, imgs in enumerate(img_samples):
-                wandb_table = wandb.Table(
-                    columns=['Resource', 'Generated-Images']
-                )
-                imgs_raw=(func.unnormalize_to_zero_to_one(imgs.cpu().numpy().squeeze()) * 255).astype(np.uint8)
+            # Create Noise Image
+            shape = (sample_batch_size, self.cloud.diffusion_model.channels, self.cloud.diffusion_model.image_height, self.cloud.diffusion_model.image_width)
+            noise_img = torch.randn(shape, device=self.cloud.device)
+            
+            # Sample using Cloud
+            cloud_img_samples = self.cloud.diffusion_model.sample(batch_size=sample_batch_size,
+                                            t_min=0,
+                                            t_max=self.cloud.diffusion_model.num_timesteps,
+                                            noise_img=noise_img, 
+                                            return_all_timesteps=True)
+            
+            # Continue sampling using Clients
+            for client_id, client in self.clients.items():
                 
-                if return_all_timesteps:
-                    for image_idx, img in enumerate(imgs_raw):
-                        wandb_table.add_data('CLOUD' if image_idx < self.cloud.diffusion_model.num_timesteps-client.t_cut else client_id, wandb.Image(img))
-                        
-                        image_save_path=self.results_folder + f"image_{client_id}_{batch_idx}-{image_idx}.png"
-                        img = Image.fromarray(img)
-                        img.save(image_save_path)
-                        
+                folder_path=self.results_folder + f"testing/{int(client.t_cut_ratio*100)}"
+                if not SETTINGS.diffusion_trainer['GENERATION']['create_new_samples'] and testing:
+                    continue
+                
+                if client.t_cut == 0:
+                    client_img_samples = cloud_img_samples[:,-1,...]
+                    
+                elif client.t_cut == client.diffusion_model.num_timesteps:
+                    client_img_samples = client.diffusion_model.sample(batch_size=sample_batch_size,
+                                                t_min=0,
+                                                t_max=client.diffusion_model.num_timesteps,
+                                                noise_img=noise_img.to(client.device),
+                                                return_all_timesteps=return_all_timesteps)
                 else:
-                    image_save_path=self.results_folder + f"image_{client_id}_{batch_idx}.png"
+                    client_img_samples = client.diffusion_model.sample(batch_size=sample_batch_size,
+                                                t_min=0,
+                                                t_max=client.t_cut,
+                                                noise_img=cloud_img_samples[:,-(client.t_cut+1),...].to(client.device),
+                                                return_all_timesteps=return_all_timesteps)
+                
+                # Store images
+                if return_all_timesteps:
+                    img_samples=torch.cat([cloud_img_samples[:,:-(client.t_cut+1),...].to(client.device), client_img_samples], dim=1)
+                else:
+                    img_samples=client_img_samples
+                
+                #* Client images
+                for batch_idx, imgs in enumerate(img_samples):
+                    wandb_table = wandb.Table(
+                        columns=['Resource', 'Generated-Images']
+                    )
+                    image_idx=batch_k*sample_batch_size + batch_idx
+                    imgs_raw=(func.unnormalize_to_zero_to_one(imgs.cpu().numpy().squeeze()) * 255).astype(np.uint8)
+                    
+                    if testing:
+                        image_save_path=self.results_folder + f"testing/{int(client.t_cut_ratio*100)}/image_{client_id}_{image_idx}.png"
+                    else:
+                        image_save_path=self.results_folder + f"training/image_{client_id}_{image_idx}.png"
+                    
+                    if return_all_timesteps:
+                        for timestep_idx, img in enumerate(imgs_raw):
+                            wandb_table.add_data('CLOUD' if timestep_idx < self.cloud.diffusion_model.num_timesteps-client.t_cut else client_id, wandb.Image(img))
+                            
+                            image_save_path=image_save_path.remove('.png',f'-{timestep_idx}.png')
+                            img = Image.fromarray(img)
+                            img.save(image_save_path)
+                        
+                        wandb.log({f'Generated-Images-Table_{client_id}_{batch_idx}': wandb_table})
+                    
+                    else:
+                        img = Image.fromarray(imgs_raw)
+                        img.save(image_save_path)
+                
+                #* Cloud Images
+                for batch_idx, cloud_imgs in enumerate(cloud_img_samples[:,-(client.t_cut+1),...]):
+                    wandb_table = wandb.Table(
+                        columns=['Resource', 'Generated-Images']
+                    )
+                    image_idx=batch_k*sample_batch_size + batch_idx
+                    imgs_raw=(func.unnormalize_to_zero_to_one(cloud_imgs.cpu().numpy().squeeze()) * 255).astype(np.uint8)
+                    
+                    if testing:
+                        image_save_path=self.results_folder + f"testing/{int(client.t_cut_ratio*100)}_cloud/image_{client_id}_{image_idx}.png"
+                    else:
+                        image_save_path=self.results_folder + f"training/image_{client_id}_{image_idx}_cloud.png"
+                    
                     img = Image.fromarray(imgs_raw)
                     img.save(image_save_path)
-                
-                wandb.log({f'Generated-Images-Table_{client_id}_{batch_idx}': wandb_table})
-
+    
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     diffusion_model = Diffusion_Model(unet=Unet(**SETTINGS.unet['DEFAULT']),

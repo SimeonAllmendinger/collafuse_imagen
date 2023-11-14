@@ -1,49 +1,50 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.curdir))
+
+import matplotlib as mpl
+mpl.rcParams['text.usetex'] = True
+
+import os
 import torch
+import glob
+import pandas as pd
 import matplotlib.pyplot as plt
+import scienceplots
 
-def show_images(images, title=""):
-    """Shows the provided images as sub-pictures in a square"""
+plt.style.use(['science'])
 
-    # Converting images to CPU numpy arrays
-    if type(images) is torch.Tensor:
-        images = images.detach().cpu().numpy()
-
-    # Defining number of rows and columns
-    fig = plt.figure(figsize=(8, 8))
-    rows = int(len(images) ** (1 / 2))
-    cols = round(len(images) / rows)
-
-    # Populating figure with sub-plots
-    idx = 0
-    for r in range(rows):
-        for c in range(cols):
-            fig.add_subplot(rows, cols, idx + 1)
-
-            if idx < len(images):
-                plt.imshow(images[idx][0], cmap="gray")
-                idx += 1
-    fig.suptitle(title, fontsize=30)
-
-    # Showing the figure
-    plt.show()
+def visualize_kid_performance():
     
-# Shows the first batch of images
-def show_first_batch(loader):
-    for batch in loader:
-        show_images(batch[0], "Images in the first batch")
-        break
+    # load data from kid folder
+    kid_folder = "./results/kid"
 
-def show_forward(ddpm, loader, device):
-    # Showing the forward process
-    for batch in loader:
-        imgs = batch[0]
+    # Get the list of files in the kid folder
+    kid_train_files = sorted(glob.glob(os.path.join(kid_folder, '*performance_on_train*.csv')))
+    kid_test_files = sorted(glob.glob(os.path.join(kid_folder, '*performance_on_test*.csv')))
 
-        show_images(imgs, "Original images")
+    # Load the data from the kid folder
+    data = []
+    fig, ax = plt.subplots()
+    
+    for i, (kid_train_file, kid_test_file) in enumerate(zip(kid_train_files,kid_test_files)):
+        
+        # Load the data with pandas read_csv
+        kid_train_data = pd.read_csv(kid_train_file)
+        kid_test_data = pd.read_csv(kid_test_file)
 
-        for percent in [0.25, 0.5, 0.75, 1]:
-            show_images(
-                ddpm(imgs.to(device),
-                     [int(percent * ddpm.n_steps) - 1 for _ in range(len(imgs))]),
-                f"DDPM Noisy images {int(percent * 100)}%"
-            )
-        break
+        # Use the loaded data for visualization or further processing
+        #ax.plot(kid_train_data.iloc[:,1::3].values[0][:6], linestyle='--', label=f'Client {1+i} stacked')
+        ax.plot(kid_train_data.iloc[:,1::3].values[0][6:], linestyle=':', label=f'Client {1+i} (train dataset)', color=f'C{i}')
+        ax.plot(kid_test_data.iloc[:,1::3].values[0][6:], linestyle='-', label=f'Client {1+i} (hold-out dataset)', color=f'C{i}')
+    
+    ax.set_xticks([0,1,2,3,4,5])
+    ax.set_xticklabels(['0%','20%','40%','60%','80%','100%'])
+    ax.set_xlabel('Percentage of local training')
+    ax.set_ylabel('KID score')
+    ax.set_title('KID score on train and test set')
+    plt.legend(loc='upper right')
+    fig.savefig('./kid_performance_on_train.png')
+
+if __name__ == '__main__':
+    visualize_kid_performance()
