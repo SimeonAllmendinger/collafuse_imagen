@@ -31,7 +31,6 @@ from denoising_diffusion_pytorch.version import __version__
 from src.components.utils.settings import Settings
 from src.components.utils import functions as func
 from src.components.model.unet import Unet
-from src.components.visualization.display_images import show_images
 
 import logging
 logging.getLogger('apscheduler.executors.default').propagate = False
@@ -598,6 +597,7 @@ class Diffusion_Trainer(object):
         wandb.config['TRAINER'] = SETTINGS.diffusion_trainer
         wandb.config['DIFFUSION_MODEL'] = SETTINGS.diffusion_model
         wandb.config['UNET'] = SETTINGS.unet
+        wandb.config['CLIENTS'] = SETTINGS.clients
 
         for epoch in tqdm(range(self.n_epochs), desc=f"Training progress", colour="#00ff00", disable=False):
 
@@ -764,7 +764,7 @@ class Diffusion_Trainer(object):
         self.run = wandb.init(
             project="distributed_genai",
             notes="This experiment will trest distributed diffusion models to investigate the effectiveness regarding information inclosure, performance and resources",
-            tags=["ecis", "experiment", "test"],
+            tags=["ecis", "experiment", "test", f"{int(self.clients['CLIENT_1'].t_cut_ratio * 100)}"],
             name=f'test_{datetime.now().strftime("%I:%M%p_%m-%d-%Y")}'
         )
         
@@ -772,6 +772,7 @@ class Diffusion_Trainer(object):
         wandb.config['TRAINER'] = SETTINGS.diffusion_trainer
         wandb.config['DIFFUSION_MODEL'] = SETTINGS.diffusion_model
         wandb.config['UNET'] = SETTINGS.unet
+        wandb.config['CLIENTS'] = SETTINGS.clients
         
         self.load()
         #self.generate_images(testing=True)
@@ -784,6 +785,8 @@ class Diffusion_Trainer(object):
         wandb.log({f'Performance {client_id}_test | KID' : client.kid_score_test  for client_id, client in self.clients.items()})
         wandb.log({f'Information Disclosure {client_id}_train | KID' : client.kid_inf_dis_train  for client_id, client in self.clients.items()})
         wandb.log({f'Information Disclosure {client_id}_test | KID' : client.kid_inf_dis_test  for client_id, client in self.clients.items()})
+        wandb.log({f'Information Disclosure {client_id}_train | Pixel_Comparison_MSE (AGGREGATED)' : client.inf_dis_mse  for client_id, client in self.clients.items()})
+        wandb.log({f'Information Disclosure {client_id}_train | Pixel_Comparison_MSE (MEAN)' : client.inf_dis_mse_mean  for client_id, client in self.clients.items()})
     
         wandb.finish()
     
@@ -795,6 +798,9 @@ class Diffusion_Trainer(object):
         n_samples=SETTINGS.diffusion_trainer['GENERATION']['n_samples']
         
         for batch_k in range(int(np.ceil(n_samples/sample_batch_size))):
+            
+            if not SETTINGS.diffusion_trainer['GENERATION']['create_new_samples'] and testing:
+                continue
             
             # Create Noise Image
             shape = (sample_batch_size, self.cloud.diffusion_model.channels, self.cloud.diffusion_model.image_height, self.cloud.diffusion_model.image_width)
@@ -809,10 +815,6 @@ class Diffusion_Trainer(object):
             
             # Continue sampling using Clients
             for client_id, client in self.clients.items():
-                
-                folder_path=self.results_folder + f"testing/{int(client.t_cut_ratio*100)}"
-                if not SETTINGS.diffusion_trainer['GENERATION']['create_new_samples'] and testing:
-                    continue
                 
                 if client.t_cut == 0:
                     client_img_samples = cloud_img_samples[:,-1,...]

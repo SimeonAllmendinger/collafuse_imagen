@@ -19,4 +19,4 @@ GENERATION:
   sample_batch_size: 150
   n_samples: 4050
   return_all_timesteps: False
-  create_new_samples: True
+  create_new_samples: False
