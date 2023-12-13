@@ -30,12 +30,14 @@ class Settings():
         self.__logger.debug(f'BASE_PATH: {self.__base["PATH_BASE_DIR"]}')
         
         # Models
-        self.diffusion_model = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/model/config_diffusion_model.yaml'))
         self.unet = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/model/config_unet.yaml'))
+        self.diffusion_model = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/model/config_diffusion_model.yaml'))
         self.diffusion_trainer = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/model/config_diffusion_trainer.yaml'))
+        self.imagen_model = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/model/config_imagen_model.yaml'))
         
         # Nodes
         self.clients = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/nodes/config_clients.yaml'))
+        self.clouds = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/nodes/config_clouds.yaml'))
         
         # Data
         self.data = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/utils/config_data.yaml'))

@@ -1,0 +1,3 @@
+CLOUD:
+  idx: 1
+  model_type: IMAGEN # DDPM, IMAGEN

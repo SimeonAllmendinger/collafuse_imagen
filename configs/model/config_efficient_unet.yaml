@@ -1,0 +1,55 @@
+UNET_64:
+  dim: 32
+  num_resnet_blocks: 1
+  cond_dim: Null
+  num_image_tokens: 4
+  num_time_tokens: 2
+  learned_sinu_pos_emb_dim: 16
+  out_dim: Null
+  dim_mults:
+    - 1
+    - 2
+    - 4
+    - 8
+  cond_images_channels: 0
+  channels: 3
+  channels_out: Null
+  attn_dim_head: 64
+  attn_heads: 8
+  ff_mult: 2.
+  lowres_cond: False                  # for cascading diffusion - https://cascaded-diffusion.github.io/
+  layer_attns: True
+  layer_attns_depth: 1
+  layer_mid_attns_depth: 1
+  layer_attns_add_text_cond: True     # whether to condition the self-attention blocks with the text embeddings, as described in Appendix D.3.1
+  attend_at_middle: True              # whether to have a layer of attention at the bottleneck (can turn off for higher resolution in cascading DDPM, before bringing in efficient attention)
+  layer_cross_attns: True
+  use_linear_attn: False
+  use_linear_cross_attn: False
+  cond_on_text: True
+  max_text_len: 256
+  init_dim: Null
+  resnet_groups: 8
+  init_conv_kernel_size: 7          # kernel size of initial conv, if not using cross embed
+  init_cross_embed: True
+  init_cross_embed_kernel_sizes:
+    - 3
+    - 7
+    - 15
+  cross_embed_downsample: False
+  cross_embed_downsample_kernel_sizes: 
+    - 2
+    - 4
+  attn_pool_text: True
+  attn_pool_num_latents: 32
+  dropout: 0.
+  memory_efficient: False
+  init_conv_to_final_conv_residual: False
+  use_global_context_attn: True
+  scale_skip_connection: True
+  final_resnet_block: True
+  final_conv_kernel_size: 3
+  self_cond: False
+  resize_mode: nearest
+  combine_upsample_fmaps: False      # combine feature maps from all upsample blocks, used in unet squared successfully
+  pixel_shuffle_upsample: True

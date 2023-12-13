@@ -18,5 +18,6 @@ configs/visualization/config_wandb.yaml
 .vscode
 wandb
 **Python**
+*.DS_Store
 run_scripts/stderr.txt
 run_scripts/stdout.txt

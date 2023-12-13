@@ -1,0 +1,25 @@
+DEFAULT:
+  image_sizes:                                # for cascading ddpm, image size at each stage
+     - 64                             
+  text_encoder_name: google/t5-v1_1-base
+  text_embed_dim: Null
+  channels: 3
+  timesteps: 1000
+  cond_drop_prob: 0.1
+  loss_type: l2
+  noise_schedules: cosine
+  pred_objectives: noise
+  random_crop_sizes: Null
+  lowres_noise_schedule: linear
+  lowres_sample_noise_level: 0.2              # in the paper, they present a new trick where they noise the lowres conditioning image, and at sample time, fix it to a certain level (0.1 or 0.3) - the unets are also made to be conditioned on this noise level
+  per_sample_random_aug_noise_level: False    # unclear when conditioning on augmentation noise level, whether each batch element receives a random aug noise value - turning off due to @marunine's find
+  condition_on_text: True
+  auto_normalize_img: False                    # whether to take care of normalizing the image from [0, 1] to [-1, 1] and back automatically - you can turn this off if you want to pass in the [-1, 1] ranged image yourself from the dataloader
+  dynamic_thresholding: True
+  dynamic_thresholding_percentile: 0.95       # unsure what this was based on perusal of paper
+  only_train_unet_number: Null
+  temporal_downsample_factor: 1
+  resize_cond_video_frames: True
+  resize_mode: nearest
+  min_snr_loss_weight: True                  # https://arxiv.org/abs/2303.09556
+  min_snr_gamma: 5

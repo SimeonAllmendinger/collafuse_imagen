@@ -2,6 +2,7 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
 
@@ -15,6 +16,8 @@ from cleanfid import utils as fid_utils
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets.mnist import MNIST, FashionMNIST
 from torchvision import transforms as T
+
+from imagen_pytorch.t5 import t5_encode_text
 
 from src.components.utils.settings import Settings
 from src.components.utils import functions as func
@@ -35,7 +38,9 @@ class Dataset(Dataset):
         augment_horizontal_flip = False,
         convert_image_to = None,
         is_dataset_results=False,
-        is_dataset_cloud=False
+        is_dataset_cloud=False,
+        path_labels=None,
+        path_text_embeds=None
         ):
         
         super().__init__()
@@ -60,7 +65,13 @@ class Dataset(Dataset):
         elif is_dataset_cloud:
             self.paths = [p for ext in exts for p in Path(f'{folder}').glob(f'{int(t_cut_ratio*100)}_cloud/image_{client_id}_*.{ext}')]
         else:
-            self.paths = [p for ext in exts for k in range(self.data_sample_min, self.data_sample_max) for p in Path(f'{folder}').glob(f'**/{k:03d}-*.{ext}')]
+            if path_labels:
+                self.paths = pd.read_csv(path_labels)[self.data_sample_min:self.data_sample_max,0].to_list()
+                self.texts = pd.read_csv(path_labels)[self.data_sample_min:self.data_sample_max,1].to_list() 
+                text_embeds_list = [torch.load(file_path) for file_path in Path(f'{path_text_embeds}').glob(f'*.pt')]
+                self.text_embeds = torch.stack(text_embeds_list, dim=0)
+            else:
+                self.paths = [p for ext in exts for k in range(self.data_sample_min, self.data_sample_max) for p in Path(f'{folder}').glob(f'**/{k:03d}-*.{ext}')]
         
         # define inception frame size
         self.inception_width = 299
@@ -75,19 +86,20 @@ class Dataset(Dataset):
 
     def __getitem__(self, index):
         path = self.paths[index]
-        
+        label = self.text_embeds[index]
+          
         img = Image.open(path)
         img= self.transform(img)
         
-        # create new image of desired size and color (blue) for padding
+        '''# create new image of desired size and color (blue) for padding
         inception_frame = np.zeros((self.inception_height, self.inception_width), dtype=np.uint8)
         
         # copy img image into center of result image
         inception_frame[self.inception_y_center:self.inception_y_center+self.image_chw[1], self.inception_x_center:self.inception_x_center+self.image_chw[2]] = func.unnormalize_to_zero_to_one(img.cpu().numpy().squeeze()* 255).astype(np.uint8)
         inception_frame=np.stack((inception_frame,)*3, axis=-1)
-        inception_img=torch.tensor(func.normalize_to_neg_one_to_one(inception_frame)).permute(2,0,1)
+        inception_img=torch.tensor(func.normalize_to_neg_one_to_one(inception_frame)).permute(2,0,1)'''
         
-        return img, inception_img
+        return img, label #inception_img
     
 class Client(BaseNode):
     def __init__(self, 
@@ -98,11 +110,12 @@ class Client(BaseNode):
                 data_train_sample_interval: list,
                 data_test_sample_interval: list,
                 t_cut_ratio: float,
-                path_tmp_dir: str
+                path_tmp_dir: str,
+                model_type: str,
                 ):
         
         # Call the parent class constructor
-        super().__init__(id=f'CLIENT_{idx}', node_type='Client', device=device)
+        super().__init__(id=f'CLIENT_{idx}', node_type='Client', device=device, model_type=model_type)
         
         # Set the t_cut_ratio attribute
         self.t_cut_ratio = t_cut_ratio
@@ -115,25 +128,35 @@ class Client(BaseNode):
         ])
         
         # Initialize the datasets based on the dataset_name
-        if dataset_name == 'MNIST':
-            self.ds_train = MNIST(f"{path_tmp_dir}/data", download=True, train=True, transform=self.transform)
-            self.ds_test = MNIST(f"{path_tmp_dir}/data", download=True, train=False, transform=self.transform)
-        elif dataset_name == 'FashionMNIST':
-            self.ds_train = FashionMNIST(f"{path_tmp_dir}/data", download=True, train=True, transform=self.transform)
-            self.ds_test = FashionMNIST(f"{path_tmp_dir}/data", download=True, train=False, transform=self.transform)
-        elif dataset_name == 'BraTS2020':
-            self.ds_train = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['BraTS2020']['path_train_sliced']), 
+        match dataset_name:
+            case 'MNIST':
+                self.ds_train = MNIST(f"{path_tmp_dir}/data", download=True, train=True, transform=self.transform)
+                self.ds_test = MNIST(f"{path_tmp_dir}/data", download=True, train=False, transform=self.transform)
+            case 'FashionMNIST':
+                self.ds_train = FashionMNIST(f"{path_tmp_dir}/data", download=True, train=True, transform=self.transform)
+                self.ds_test = FashionMNIST(f"{path_tmp_dir}/data", download=True, train=False, transform=self.transform)
+            case 'BraTS2020':
+                self.ds_train = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['BraTS2020']['path_train_sliced']), 
+                                        image_chw=image_chw,
+                                        data_sample_interval=data_train_sample_interval,
+                                        t_cut_ratio=self.t_cut_ratio,
+                                        client_id=self.id)
+                self.ds_test = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['BraTS2020']['path_test_sliced']), 
                                     image_chw=image_chw,
-                                    data_sample_interval=data_train_sample_interval,
+                                    data_sample_interval=data_test_sample_interval,
                                     t_cut_ratio=self.t_cut_ratio,
                                     client_id=self.id)
-            self.ds_test = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['BraTS2020']['path_test_sliced']), 
-                                image_chw=image_chw,
-                                data_sample_interval=data_test_sample_interval,
-                                t_cut_ratio=self.t_cut_ratio,
-                                client_id=self.id)
-        else:
-            raise ValueError(f'Unknown dataset: {dataset_name}')
+            case 'CelebA':
+                self.ds_train = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_train_images']), 
+                                        image_chw=image_chw,
+                                        data_sample_interval=data_train_sample_interval,
+                                        t_cut_ratio=self.t_cut_ratio,
+                                        client_id=self.id,
+                                        path_labels=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_labels']),
+                                        path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_text_embeds']))
+                
+            case _:
+                raise ValueError(f'Unknown dataset: {dataset_name}')
         
         # Log the length of the train dataset
         LOGGER.debug(f'Train Dataset length: {len(self.ds_train)}')
@@ -144,7 +167,7 @@ class Client(BaseNode):
     
     @property
     def path_save_model(self):
-        path = self.diffusion_model.path_save_model.replace('.pt',f'_{self.t_cut_ratio}.pt')
+        path = self.model.path_save_model.replace('.pt',f'_{self.t_cut_ratio}.pt')
         return path
         
     def set_dl(self, batch_size: int, num_workers: int) -> DataLoader:
@@ -294,3 +317,13 @@ class Client(BaseNode):
         features_test_data = np.concatenate(feature_list_test_data)
         
         return features_actual, features_inf_dis, features_test_data      
+    
+
+'''labels = pd.read_csv('data/CelebA/annotations/identity_CelebA.txt', sep=' ', dtype=str).iloc[:,1].to_list()
+print(len(labels))
+for i in tqdm(range(20, int(np.ceil(len(labels)/10000)))):
+    if (i+1)*10000 > len(labels):
+        text_embeds = t5_encode_text(labels[i*10000:])
+    else:
+        text_embeds = t5_encode_text(labels[i*10000:(i+1)*10000])
+    torch.save(text_embeds, f'data/CelebA/annotations/text_embeds_base_{i+1}.pt')'''

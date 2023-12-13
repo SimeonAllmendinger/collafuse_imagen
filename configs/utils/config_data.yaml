@@ -8,3 +8,10 @@ BraTS2020:
   slice_min: 60
   slice_max: 100
   slice_axis: 2
+
+CelebA:
+  path_train_images: data/CelebA/RAW/train/
+  path_labels: data/CelebA/annotations/identity_CelebA.txt
+  path_text_embeds: data/CelebA/annotations/labels
+  n_train_items: 202599
+  n_test_items: 0
