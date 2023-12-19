@@ -3,8 +3,8 @@ DEFAULT:
   sampling_timesteps: 100           # Number of steps when sampling, if smaller than timesteps --> DDIM
   image_chw: 
     - 1
-    - 128
-    - 128
+    - 64
+    - 64
   objective: pred_noise
   beta_schedule: cosine
   ddim_sampling_eta: 0.0

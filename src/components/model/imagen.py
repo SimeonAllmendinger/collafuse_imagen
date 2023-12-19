@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.curdir))
+
 import math
 from random import random
 from beartype.typing import List, Union
@@ -17,19 +21,20 @@ import kornia.augmentation as K
 
 from einops import rearrange, repeat, reduce
 
-from imagen_pytorch.imagen_pytorch import GaussianDiffusionContinuousTimes, Unet, NullUnet
 from imagen_pytorch.t5 import t5_encode_text, get_encoded_dim, DEFAULT_T5_NAME
 from imagen_pytorch.imagen_video import Unet3D, resize_video_to, scale_video_time
 
 from src.components.utils import functions as func
+from src.components.model.efficient_unet import Unet as EfficientUnet
+from src.components.model.efficient_unet import GaussianDiffusionContinuousTimes, NullUnet
 
 # main imagen ddpm class, which is a cascading DDPM from Ho et al.
 class Imagen(nn.Module):
     def __init__(
         self,
         unets,
-        *,
         image_sizes,                                # for cascading ddpm, image size at each stage
+        *,                    
         text_encoder_name = DEFAULT_T5_NAME,
         text_embed_dim = None,
         channels = 3,
@@ -55,7 +60,7 @@ class Imagen(nn.Module):
         path_save_model = None
     ):
         super().__init__()
-
+        
         # loss
         if loss_type == 'l1':
             loss_fn = F.l1_loss
@@ -131,7 +136,7 @@ class Imagen(nn.Module):
         self.only_train_unet_number = only_train_unet_number
 
         for ind, one_unet in enumerate(unets):
-            assert isinstance(one_unet, (Unet, Unet3D, NullUnet))
+            assert isinstance(one_unet, (Unet3D, NullUnet, EfficientUnet))
             is_first = ind == 0
 
             one_unet = one_unet.cast_model_parameters(
@@ -748,6 +753,7 @@ class Imagen(nn.Module):
                 times,
                 noise,
                 noise_scheduler,
+                lowres_cond_img=None,
                 random_crop_size=None
                 ):
         
@@ -792,7 +798,7 @@ class Imagen(nn.Module):
         log_snr,
         alpha,
         sigma,
-        unet: Union[Unet, Unet3D, NullUnet, DistributedDataParallel],
+        unet: Union[Unet3D, NullUnet, DistributedDataParallel, EfficientUnet],
         *,
         noise_scheduler,
         lowres_cond_img = None,
@@ -813,11 +819,11 @@ class Imagen(nn.Module):
             lowres_cond_img_noisy, *_ = self.lowres_noise_schedule.q_sample(x_start = lowres_cond_img, t = lowres_aug_times, noise = torch.randn_like(lowres_cond_img))
 
         # time condition
-
+        
         noise_cond = noise_scheduler.get_condition(times)
 
         # unet kwargs
-
+        
         unet_kwargs = dict(
             text_embeds = text_embeds,
             text_mask = text_mask,
@@ -848,10 +854,10 @@ class Imagen(nn.Module):
                 unet_kwargs = {**unet_kwargs, 'self_cond': x_start}
 
         # get prediction
-
+        
         pred = unet.forward(
             x_noisy,
-            noise_cond,
+            noise_cond, # conditioned noise scheduler
             **unet_kwargs
         )
 
@@ -886,7 +892,7 @@ class Imagen(nn.Module):
             loss_weight = maybe_clipped_snr
         elif pred_objective == 'v':
             loss_weight = maybe_clipped_snr / (snr + 1)
-
+        
         losses = losses * loss_weight
         return losses.mean()
 
@@ -901,7 +907,7 @@ class Imagen(nn.Module):
         alpha,
         sigma,
         noise_scheduler,
-        unet: Union[Unet, Unet3D, NullUnet, DistributedDataParallel] = None,
+        unet: Union[Unet3D, NullUnet, DistributedDataParallel, EfficientUnet] = None,
         texts: List[str] = None,
         text_embeds=None,
         text_masks = None,
@@ -985,7 +991,7 @@ class Imagen(nn.Module):
                 lowres_aug_times = repeat(lowres_aug_time, '1 -> b', b = b)
 
         images = self.resize_to(images, target_image_size, **frames_to_resize_kwargs(target_frame_size))
-
+        
         return self.p_losses(x_noisy=x_noisy,
                              x_start=images,
                              times=times,
@@ -1002,5 +1008,4 @@ class Imagen(nn.Module):
                              lowres_aug_times = lowres_aug_times, 
                              pred_objective = pred_objective, 
                              min_snr_gamma = min_snr_gamma, 
-                             random_crop_size = random_crop_size
                              **kwargs)

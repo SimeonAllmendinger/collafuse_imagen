@@ -1,9 +1,9 @@
 DEFAULT:
-  n_epochs: 300                         # total training steps
+  n_epochs: 3                         # total training steps
   lr: 0.001
   initial_loss: 1.5
   display: False
-  batch_size: 150
+  batch_size: 10
   num_workers: 2 
   loss_lambda: 0.5
   adam_betas: 

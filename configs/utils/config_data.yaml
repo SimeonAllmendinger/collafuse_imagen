@@ -10,8 +10,8 @@ BraTS2020:
   slice_axis: 2
 
 CelebA:
-  path_train_images: data/CelebA/RAW/train/
+  path_train_images: data/CelebA/RAW/
   path_labels: data/CelebA/annotations/identity_CelebA.txt
-  path_text_embeds: data/CelebA/annotations/labels
-  n_train_items: 202599
-  n_test_items: 0
+  path_text_embeds: data/CelebA/annotations/
+  n_train_items: 10177 # classes and 202599 items
+  n_test_items: 10177 # classes and 0 items

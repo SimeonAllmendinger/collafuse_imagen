@@ -1,4 +1,7 @@
+import sys
 import os
+sys.path.append(os.path.abspath(os.curdir))
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -66,10 +69,25 @@ class Dataset(Dataset):
             self.paths = [p for ext in exts for p in Path(f'{folder}').glob(f'{int(t_cut_ratio*100)}_cloud/image_{client_id}_*.{ext}')]
         else:
             if path_labels:
-                self.paths = pd.read_csv(path_labels)[self.data_sample_min:self.data_sample_max,0].to_list()
-                self.texts = pd.read_csv(path_labels)[self.data_sample_min:self.data_sample_max,1].to_list() 
-                text_embeds_list = [torch.load(file_path) for file_path in Path(f'{path_text_embeds}').glob(f'*.pt')]
-                self.text_embeds = torch.stack(text_embeds_list, dim=0)
+                df = pd.read_csv(path_labels, 
+                                 sep=' ', header=None, 
+                                 names=['PATH_IMG', 'CLASS'])
+
+                df = df.loc[(df.CLASS >= self.data_sample_min - 1) & (df.CLASS < self.data_sample_max - 1),:]
+                
+                self.paths = df.PATH_IMG.to_list()
+                self.texts = df.CLASS.astype(str).to_list() 
+                
+                path_text_masks_file = f'{path_text_embeds}text_masks_{client_id}_{len(self.paths)}.pt'
+                path_text_embeds_file = f'{path_text_embeds}text_embeds_{client_id}_{len(self.paths)}.pt'
+                if not os.path.exists(path_text_embeds_file) or not os.path.exists(path_text_masks_file):
+                    self.text_embeds, self.text_masks = t5_encode_text(self.texts, 
+                                                      device=torch.device(1), 
+                                                      return_attn_mask = True)
+                    torch.save(self.text_embeds, path_text_embeds_file)
+                    torch.save(self.text_masks, path_text_masks_file)
+                self.text_embeds = torch.load(path_text_embeds_file, map_location=torch.device('cpu'))
+                self.text_masks = torch.load(path_text_masks_file, map_location=torch.device('cpu'))
             else:
                 self.paths = [p for ext in exts for k in range(self.data_sample_min, self.data_sample_max) for p in Path(f'{folder}').glob(f'**/{k:03d}-*.{ext}')]
         
@@ -85,8 +103,8 @@ class Dataset(Dataset):
         return len(self.paths)
 
     def __getitem__(self, index):
-        path = self.paths[index]
-        label = self.text_embeds[index]
+        path = os.path.join(self.folder, self.paths[index])
+        label = (self.text_embeds[index], self.text_masks[index])
           
         img = Image.open(path)
         img= self.transform(img)
@@ -154,6 +172,7 @@ class Client(BaseNode):
                                         client_id=self.id,
                                         path_labels=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_labels']),
                                         path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_text_embeds']))
+                self.ds_test = []
                 
             case _:
                 raise ValueError(f'Unknown dataset: {dataset_name}')
@@ -189,13 +208,14 @@ class Client(BaseNode):
             num_workers=num_workers
         )
 
-        # Create the data loader for testing
-        self.dl_test = DataLoader(
-            self.ds_test,
-            batch_size=batch_size,
-            shuffle=True,
-            num_workers=num_workers
-        )
+        if len(self.ds_test) > 1:
+            # Create the data loader for testing
+            self.dl_test = DataLoader(
+                self.ds_test,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=num_workers
+            )
 
     def compute_performance(self):
         
@@ -321,9 +341,11 @@ class Client(BaseNode):
 
 '''labels = pd.read_csv('data/CelebA/annotations/identity_CelebA.txt', sep=' ', dtype=str).iloc[:,1].to_list()
 print(len(labels))
-for i in tqdm(range(20, int(np.ceil(len(labels)/10000)))):
+for i in tqdm(range(0, int(np.ceil(len(labels)/40000)))):
     if (i+1)*10000 > len(labels):
-        text_embeds = t5_encode_text(labels[i*10000:])
+        text_embeds = t5_encode_text(labels[i*40000:], device=torch.device(1))
     else:
-        text_embeds = t5_encode_text(labels[i*10000:(i+1)*10000])
-    torch.save(text_embeds, f'data/CelebA/annotations/text_embeds_base_{i+1}.pt')'''
+        text_embeds = t5_encode_text(labels[i*40000:(i+1)*40000], device=torch.device(1))
+    print(text_embeds.shape)
+    torch.save(text_embeds, f'data/CelebA/annotations/text_embeds_base_{i+1}.pt')
+    torch.cuda.empty_cache()'''

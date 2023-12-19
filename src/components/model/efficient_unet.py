@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.curdir))
+
 import math
 from functools import partial
 from pathlib import Path
@@ -51,7 +55,7 @@ class GaussianDiffusionContinuousTimes(nn.Module):
         return times
 
     def q_posterior(self, x_start, x_t, t, *, t_next = None):
-        t_next = func.func.default(t_next, lambda: (t - 1. / self.num_timesteps).clamp(min = 0.))
+        t_next = func.default(t_next, lambda: (t - 1. / self.num_timesteps).clamp(min = 0.))
 
         """ https://openreview.net/attachment?id=2LdBqxc1Yv&name=supplementary_material """
         log_snr = self.log_snr(t)
@@ -97,25 +101,25 @@ class GaussianDiffusionContinuousTimes(nn.Module):
         noise = func.default(noise, lambda: torch.randn_like(x_from))
 
         log_snr = self.log_snr(from_t)
-        log_snr_padded_dim = right_pad_dims_to(x_from, log_snr)
-        alpha, sigma =  log_snr_to_alpha_sigma(log_snr_padded_dim)
+        log_snr_padded_dim = func.right_pad_dims_to(x_from, log_snr)
+        alpha, sigma =  func.log_snr_to_alpha_sigma(log_snr_padded_dim)
 
         log_snr_to = self.log_snr(to_t)
-        log_snr_padded_dim_to = right_pad_dims_to(x_from, log_snr_to)
-        alpha_to, sigma_to =  log_snr_to_alpha_sigma(log_snr_padded_dim_to)
+        log_snr_padded_dim_to = func.right_pad_dims_to(x_from, log_snr_to)
+        alpha_to, sigma_to =  func.log_snr_to_alpha_sigma(log_snr_padded_dim_to)
 
         return x_from * (alpha_to / alpha) + noise * (sigma_to * alpha - sigma * alpha_to) / alpha
 
     def predict_start_from_v(self, x_t, t, v):
         log_snr = self.log_snr(t)
-        log_snr = right_pad_dims_to(x_t, log_snr)
-        alpha, sigma = log_snr_to_alpha_sigma(log_snr)
+        log_snr = func.right_pad_dims_to(x_t, log_snr)
+        alpha, sigma = func.log_snr_to_alpha_sigma(log_snr)
         return alpha * x_t - sigma * v
 
     def predict_start_from_noise(self, x_t, t, noise):
         log_snr = self.log_snr(t)
-        log_snr = right_pad_dims_to(x_t, log_snr)
-        alpha, sigma = log_snr_to_alpha_sigma(log_snr)
+        log_snr = func.right_pad_dims_to(x_t, log_snr)
+        alpha, sigma = func.log_snr_to_alpha_sigma(log_snr)
         return (x_t - sigma * noise) / alpha.clamp(min = 1e-8)
 
 # norms and residuals
@@ -219,7 +223,7 @@ class PerceiverAttention(nn.Module):
 
         sim = einsum('... i d, ... j d  -> ... i j', q, k) * self.scale
 
-        if func.func.exists(mask):
+        if func.exists(mask):
             max_neg_value = -torch.finfo(sim.dtype).max
             mask = F.pad(mask, (0, latents.shape[-2]), value = True)
             mask = rearrange(mask, 'b j -> b 1 1 j')
@@ -276,7 +280,7 @@ class PerceiverResampler(nn.Module):
 
         latents = repeat(self.latents, 'n d -> b n d', b = x.shape[0])
 
-        if func.func.exists(self.to_latents_from_mean_pooled_seq):
+        if func.exists(self.to_latents_from_mean_pooled_seq):
             meanpooled_seq = func.masked_mean(x, dim = 1, mask = torch.ones(x.shape[:2], device = x.device, dtype = torch.bool))
             meanpooled_latents = self.to_latents_from_mean_pooled_seq(meanpooled_seq)
             latents = torch.cat((meanpooled_latents, latents), dim = -2)
@@ -313,7 +317,7 @@ class Attention(nn.Module):
         self.q_scale = nn.Parameter(torch.ones(dim_head))
         self.k_scale = nn.Parameter(torch.ones(dim_head))
 
-        self.to_context = nn.Sequential(nn.LayerNorm(context_dim), nn.Linear(context_dim, dim_head * 2)) if func.func.exists(context_dim) else None
+        self.to_context = nn.Sequential(nn.LayerNorm(context_dim), nn.Linear(context_dim, dim_head * 2)) if func.exists(context_dim) else None
 
         self.to_out = nn.Sequential(
             nn.Linear(inner_dim, dim, bias = False),
@@ -337,8 +341,8 @@ class Attention(nn.Module):
 
         # add text conditioning, if present
 
-        if func.func.exists(context):
-            assert func.func.exists(self.to_context)
+        if func.exists(context):
+            assert func.exists(self.to_context)
             ck, cv = self.to_context(context).chunk(2, dim = -1)
             k = torch.cat((ck, k), dim = -2)
             v = torch.cat((cv, v), dim = -2)
@@ -355,14 +359,14 @@ class Attention(nn.Module):
 
         # relative positional encoding (T5 style)
 
-        if func.func.exists(attn_bias):
+        if func.exists(attn_bias):
             sim = sim + attn_bias
 
         # masking
 
         max_neg_value = -torch.finfo(sim.dtype).max
 
-        if func.func.exists(mask):
+        if func.exists(mask):
             mask = F.pad(mask, (1, 0), value = True)
             mask = rearrange(mask, 'b j -> b 1 1 j')
             sim = sim.masked_fill(~mask, max_neg_value)
@@ -381,7 +385,7 @@ class Attention(nn.Module):
 
 # decoder
 def Upsample(dim, dim_out = None):
-    dim_out = func.func.default(dim_out, dim)
+    dim_out = func.default(dim_out, dim)
 
     return nn.Sequential(
         nn.Upsample(scale_factor = 2, mode = 'nearest'),
@@ -395,7 +399,7 @@ class PixelShuffleUpsample(nn.Module):
     """
     def __init__(self, dim, dim_out = None):
         super().__init__()
-        dim_out = func.func.default(dim_out, dim)
+        dim_out = func.default(dim_out, dim)
         conv = nn.Conv2d(dim, dim_out * 4, 1)
 
         self.net = nn.Sequential(
@@ -421,7 +425,7 @@ class PixelShuffleUpsample(nn.Module):
 def Downsample(dim, dim_out = None):
     # https://arxiv.org/abs/2208.03641 shows this is the most optimal way to downsample
     # named SP-conv in the paper, but basically a pixel unshuffle
-    dim_out = func.func.default(dim_out, dim)
+    dim_out = func.default(dim_out, dim)
     return nn.Sequential(
         Rearrange('b c (h s1) (w s2) -> b (c s1 s2) h w', s1 = 2, s2 = 2),
         nn.Conv2d(dim * 4, dim_out, 1)
@@ -472,7 +476,7 @@ class Block(nn.Module):
     def forward(self, x, scale_shift = None):
         x = self.groupnorm(x)
 
-        if func.func.exists(scale_shift):
+        if func.exists(scale_shift):
             scale, shift = scale_shift
             x = x * (scale + 1) + shift
 
@@ -497,7 +501,7 @@ class ResnetBlock(nn.Module):
 
         self.time_mlp = None
 
-        if func.func.exists(time_cond_dim):
+        if func.exists(time_cond_dim):
             self.time_mlp = nn.Sequential(
                 nn.SiLU(),
                 nn.Linear(time_cond_dim, dim_out * 2)
@@ -505,7 +509,7 @@ class ResnetBlock(nn.Module):
 
         self.cross_attn = None
 
-        if func.func.exists(cond_dim):
+        if func.exists(cond_dim):
             attn_klass = CrossAttention if not linear_attn else LinearCrossAttention
 
             self.cross_attn = attn_klass(
@@ -525,15 +529,15 @@ class ResnetBlock(nn.Module):
     def forward(self, x, time_emb = None, cond = None):
 
         scale_shift = None
-        if func.func.exists(self.time_mlp) and func.func.exists(time_emb):
+        if func.exists(self.time_mlp) and func.exists(time_emb):
             time_emb = self.time_mlp(time_emb)
             time_emb = rearrange(time_emb, 'b c -> b c 1 1')
             scale_shift = time_emb.chunk(2, dim = 1)
 
         h = self.block1(x)
 
-        if func.func.exists(self.cross_attn):
-            assert func.func.exists(cond)
+        if func.exists(self.cross_attn):
+            assert func.exists(cond)
             h = rearrange(h, 'b c h w -> b h w c')
             h, ps = pack([h], 'b * c')
             h = self.cross_attn(h, context = cond) + h
@@ -563,7 +567,7 @@ class CrossAttention(nn.Module):
         self.heads = heads
         inner_dim = dim_head * heads
 
-        context_dim = func.func.default(context_dim, dim)
+        context_dim = func.default(context_dim, dim)
 
         self.norm = LayerNorm(dim)
         self.norm_context = LayerNorm(context_dim) if norm_context else Identity()
@@ -611,7 +615,7 @@ class CrossAttention(nn.Module):
 
         max_neg_value = -torch.finfo(sim.dtype).max
 
-        if func.func.exists(mask):
+        if func.exists(mask):
             mask = F.pad(mask, (1, 0), value = True)
             mask = rearrange(mask, 'b j -> b 1 1 j')
             sim = sim.masked_fill(~mask, max_neg_value)
@@ -645,7 +649,7 @@ class LinearCrossAttention(CrossAttention):
 
         max_neg_value = -torch.finfo(x.dtype).max
 
-        if func.func.exists(mask):
+        if func.exists(mask):
             mask = F.pad(mask, (1, 0), value = True)
             mask = rearrange(mask, 'b n -> b n 1')
             k = k.masked_fill(~mask, max_neg_value)
@@ -699,7 +703,7 @@ class LinearAttention(nn.Module):
             nn.Conv2d(inner_dim, inner_dim, 3, bias = False, padding = 1, groups = inner_dim)
         )
 
-        self.to_context = nn.Sequential(nn.LayerNorm(context_dim), nn.Linear(context_dim, inner_dim * 2, bias = False)) if func.func.exists(context_dim) else None
+        self.to_context = nn.Sequential(nn.LayerNorm(context_dim), nn.Linear(context_dim, inner_dim * 2, bias = False)) if func.exists(context_dim) else None
 
         self.to_out = nn.Sequential(
             nn.Conv2d(inner_dim, dim, 1, bias = False),
@@ -848,7 +852,7 @@ class CrossEmbedLayer(nn.Module):
     ):
         super().__init__()
         assert all([*map(lambda t: (t % 2) == (stride % 2), kernel_sizes)])
-        dim_out = func.func.default(dim_out, dim_in)
+        dim_out = func.default(dim_out, dim_in)
 
         kernel_sizes = sorted(kernel_sizes)
         num_scales = len(kernel_sizes)
@@ -875,7 +879,7 @@ class UpsampleCombiner(nn.Module):
         dim_outs = tuple()
     ):
         super().__init__()
-        dim_outs = func.func.cast_tuple(dim_outs, len(dim_ins))
+        dim_outs = func.cast_tuple(dim_outs, len(dim_ins))
         assert len(dim_ins) == len(dim_outs)
 
         self.enabled = enabled
@@ -890,7 +894,7 @@ class UpsampleCombiner(nn.Module):
     def forward(self, x, fmaps = None):
         target_size = x.shape[-1]
 
-        fmaps = func.func.default(fmaps, tuple())
+        fmaps = func.default(fmaps, tuple())
 
         if not self.enabled or len(fmaps) == 0 or len(self.fmap_convs) == 0:
             return x
@@ -968,12 +972,12 @@ class Unet(nn.Module):
         # determine dimensions
 
         self.channels = channels
-        self.channels_out = func.func.default(channels_out, channels)
+        self.channels_out = func.default(channels_out, channels)
 
         # (1) in cascading diffusion, one concats the low resolution image, blurred, for conditioning the higher resolution synthesis
         # (2) in self conditioning, one appends the predict x0 (x_start)
         init_channels = channels * (1 + int(lowres_cond) + int(self_cond))
-        init_dim = func.func.default(init_dim, dim)
+        init_dim = func.default(init_dim, dim)
 
         self.self_cond = self_cond
 
@@ -993,7 +997,7 @@ class Unet(nn.Module):
 
         # time conditioning
 
-        cond_dim = func.func.default(cond_dim, dim)
+        cond_dim = func.default(cond_dim, dim)
         time_cond_dim = dim * 4 * (2 if lowres_cond else 1)
 
         # embedding time for log(snr) noise from continuous version
@@ -1047,7 +1051,7 @@ class Unet(nn.Module):
         self.text_to_cond = None
 
         if cond_on_text:
-            assert func.func.exists(text_embed_dim), 'text_embed_dim must be given to the unet if cond_on_text is True'
+            assert func.exists(text_embed_dim), 'text_embed_dim must be given to the unet if cond_on_text is True'
             self.text_to_cond = nn.Linear(text_embed_dim, cond_dim)
 
         # finer control over whether to condition on text encodings
@@ -1085,17 +1089,17 @@ class Unet(nn.Module):
 
         # resnet block klass
 
-        num_resnet_blocks = func.func.cast_tuple(num_resnet_blocks, num_layers)
-        resnet_groups = func.func.cast_tuple(resnet_groups, num_layers)
+        num_resnet_blocks = func.cast_tuple(num_resnet_blocks, num_layers)
+        resnet_groups = func.cast_tuple(resnet_groups, num_layers)
 
         resnet_klass = partial(ResnetBlock, **attn_kwargs)
 
-        layer_attns = func.func.cast_tuple(layer_attns, num_layers)
-        layer_attns_depth = func.func.cast_tuple(layer_attns_depth, num_layers)
-        layer_cross_attns = func.func.cast_tuple(layer_cross_attns, num_layers)
+        layer_attns = func.cast_tuple(layer_attns, num_layers)
+        layer_attns_depth = func.cast_tuple(layer_attns_depth, num_layers)
+        layer_cross_attns = func.cast_tuple(layer_cross_attns, num_layers)
 
-        use_linear_attn = func.func.cast_tuple(use_linear_attn, num_layers)
-        use_linear_cross_attn = func.func.cast_tuple(use_linear_cross_attn, num_layers)
+        use_linear_attn = func.cast_tuple(use_linear_attn, num_layers)
+        use_linear_cross_attn = func.cast_tuple(use_linear_cross_attn, num_layers)
 
         assert all([layers == num_layers for layers in list(map(len, (resnet_groups, layer_attns, layer_cross_attns)))])
 
@@ -1326,22 +1330,22 @@ class Unet(nn.Module):
         # condition on self
 
         if self.self_cond:
-            self_cond = func.func.default(self_cond, lambda: torch.zeros_like(x))
+            self_cond = func.default(self_cond, lambda: torch.zeros_like(x))
             x = torch.cat((x, self_cond), dim = 1)
 
         # add low resolution conditioning, if present
 
-        assert not (self.lowres_cond and not func.func.exists(lowres_cond_img)), 'low resolution conditioning image must be present'
-        assert not (self.lowres_cond and not func.func.exists(lowres_noise_times)), 'low resolution conditioning noise time must be present'
+        assert not (self.lowres_cond and not func.exists(lowres_cond_img)), 'low resolution conditioning image must be present'
+        assert not (self.lowres_cond and not func.exists(lowres_noise_times)), 'low resolution conditioning noise time must be present'
 
-        if func.func.exists(lowres_cond_img):
+        if func.exists(lowres_cond_img):
             x = torch.cat((x, lowres_cond_img), dim = 1)
 
         # condition on input image
 
-        assert not (self.has_cond_image ^ func.func.exists(cond_images)), 'you either requested to condition on an image on the unet, but the conditioning image is not supplied, or vice versa'
+        assert not (self.has_cond_image ^ func.exists(cond_images)), 'you either requested to condition on an image on the unet, but the conditioning image is not supplied, or vice versa'
 
-        if func.func.exists(cond_images):
+        if func.exists(cond_images):
             assert cond_images.shape[1] == self.cond_images_channels, 'the number of channels on the conditioning image you are passing in does not match what you specified on initialiation of the unet'
             cond_images = func.resize_image_to(cond_images, x.shape[-1], mode = self.resize_mode)
             x = torch.cat((cond_images, x), dim = 1)
@@ -1379,7 +1383,7 @@ class Unet(nn.Module):
 
         text_tokens = None
 
-        if func.func.exists(text_embeds) and self.cond_on_text:
+        if func.exists(text_embeds) and self.cond_on_text:
 
             # conditional dropout
 
@@ -1393,8 +1397,8 @@ class Unet(nn.Module):
             text_tokens = self.text_to_cond(text_embeds)
 
             text_tokens = text_tokens[:, :self.max_text_len]
-
-            if func.func.exists(text_mask):
+            
+            if func.exists(text_mask):
                 text_mask = text_mask[:, :self.max_text_len]
 
             text_tokens_len = text_tokens.shape[1]
@@ -1403,7 +1407,7 @@ class Unet(nn.Module):
             if remainder > 0:
                 text_tokens = F.pad(text_tokens, (0, 0, 0, remainder))
 
-            if func.func.exists(text_mask):
+            if func.exists(text_mask):
                 if remainder > 0:
                     text_mask = F.pad(text_mask, (0, remainder), value = False)
 
@@ -1418,7 +1422,7 @@ class Unet(nn.Module):
                 null_text_embed
             )
 
-            if func.func.exists(self.attn_pool):
+            if func.exists(self.attn_pool):
                 text_tokens = self.attn_pool(text_tokens)
 
             # extra non-attention conditioning by projecting and then summing text embeddings to time
@@ -1435,12 +1439,12 @@ class Unet(nn.Module):
                 text_hiddens,
                 null_text_hidden
             )
-
+            
             t = t + text_hiddens
 
         # main conditioning tokens (c)
 
-        c = time_tokens if not func.func.exists(text_tokens) else torch.cat((time_tokens, text_tokens), dim = -2)
+        c = time_tokens if not func.exists(text_tokens) else torch.cat((time_tokens, text_tokens), dim = -2)
 
         # normalize conditioning tokens
 
@@ -1448,7 +1452,7 @@ class Unet(nn.Module):
 
         # initial resnet block (for memory efficient unet)
 
-        if func.func.exists(self.init_resnet_block):
+        if func.exists(self.init_resnet_block):
             x = self.init_resnet_block(x, t)
 
         # go through the layers of the unet, down and up
@@ -1456,7 +1460,7 @@ class Unet(nn.Module):
         hiddens = []
 
         for pre_downsample, init_block, resnet_blocks, attn_block, post_downsample in self.downs:
-            if func.func.exists(pre_downsample):
+            if func.exists(pre_downsample):
                 x = pre_downsample(x)
 
             x = init_block(x, t, c)
@@ -1468,12 +1472,12 @@ class Unet(nn.Module):
             x = attn_block(x, c)
             hiddens.append(x)
 
-            if func.func.exists(post_downsample):
+            if func.exists(post_downsample):
                 x = post_downsample(x)
 
         x = self.mid_block1(x, t, c)
 
-        if func.func.exists(self.mid_attn):
+        if func.exists(self.mid_attn):
             x = self.mid_attn(x)
 
         x = self.mid_block2(x, t, c)
@@ -1503,10 +1507,10 @@ class Unet(nn.Module):
         if self.init_conv_to_final_conv_residual:
             x = torch.cat((x, init_conv_residual), dim = 1)
 
-        if func.func.exists(self.final_res_block):
+        if func.exists(self.final_res_block):
             x = self.final_res_block(x, t)
 
-        if func.func.exists(lowres_cond_img):
+        if func.exists(lowres_cond_img):
             x = torch.cat((x, lowres_cond_img), dim = 1)
 
         return self.final_conv(x)

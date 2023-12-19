@@ -20,7 +20,7 @@ def get_main_working_directory(name):
 
 class Settings():
     
-    path_cwd=get_main_working_directory('distributedgenai')
+    path_cwd=get_main_working_directory('collafuse')
     __base = {'PATH_BASE_DIR': path_cwd}
     __logger = _get_logger_(path_base_dir=__base['PATH_BASE_DIR'], verbose=False) # .setLevel(logging.INFO)
     
@@ -34,6 +34,7 @@ class Settings():
         self.diffusion_model = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/model/config_diffusion_model.yaml'))
         self.diffusion_trainer = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/model/config_diffusion_trainer.yaml'))
         self.imagen_model = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/model/config_imagen_model.yaml'))
+        self.efficient_unet = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/model/config_efficient_unet.yaml'))
         
         # Nodes
         self.clients = _get_config_(path=os.path.join(self.__base['PATH_BASE_DIR'],'configs/nodes/config_clients.yaml'))

@@ -117,10 +117,11 @@ class Diffusion_Trainer(object):
             
             if client.model_type == 'IMAGEN':
                 assert not (len(client.model.unets) > 1 and not func.exists(unet_number)), f'you must specify which unet you want trained, from a range of 1 to {len(self.unets)}, if you are training cascading DDPM (multiple unets)'
-                unet_number = func.default(unet_number, 1)
+                unet_number = func.default(client.model.only_train_unet_number, 1)
                 unet_index = unet_number - 1 
-                client.noise_scheduler = client.model.noise_schedulers[unet_index]               
-            
+                client.noise_scheduler = client.model.noise_schedulers[unet_index]  
+                self.cloud.noise_scheduler = self.cloud.model.noise_schedulers[unet_index]
+                   
             if len(client.ds_train) > self.max_ds_length:
                 self.max_ds_length = len(client.ds_train)
                 
@@ -231,15 +232,16 @@ class Diffusion_Trainer(object):
                                                                             t=self.cloud.t_reshape,
                                                                             noise=client.eta[client.t.shape[0]:].to(self.cloud.device))
                             case 'IMAGEN':
-                                self.cloud.loss = self.cloud.model.backward(x_noisy=client.noisy_imgs[client.t.shape[0]:].to(self.cloud.device),
-                                                                            images=x0.to(self.cloud.device),
-                                                                            times=self.cloud.t_reshape,
-                                                                            noise=client.eta[client.t.shape[0]:].to(self.cloud.device),
-                                                                            log_snr=client.log_snr,
+                                self.cloud.loss = self.cloud.model.backward(x_noisy=client.noisy_imgs[client.t.shape[0]:],
+                                                                            images=x0[client.t.shape[0]:],
+                                                                            times=self.cloud.t,
+                                                                            noise=client.eta[client.t.shape[0]:],
+                                                                            log_snr=client.log_snr[client.t.shape[0]:],
                                                                             alpha=client.alpha,
                                                                             sigma=client.sigma,
-                                                                            noise_scheduler=client.noise_scheduler, 
-                                                                            text_embeds=label_batch)
+                                                                            noise_scheduler=self.cloud.noise_scheduler, 
+                                                                            text_embeds=label_batch[0][client.t.shape[0]:],
+                                                                            text_masks=label_batch[1][client.t.shape[0]:])
                     else:
                         self.cloud.loss = None
                     self.cloud.energy_usage['DENOISING_PROCESS'] = self.cloud.tracker.stop_task(task_name='DENOISING_PROCESS')
@@ -254,15 +256,16 @@ class Diffusion_Trainer(object):
                                                                                 t=client.t_reshape,
                                                                                 noise=client.eta[:client.t.shape[0]])
                             case 'IMAGEN':
-                                client.loss = client.model.backward(x_noisy=client.noisy_imgs[:client.t.shape[0]],
-                                                                    images=x0,
+                                client.loss = client.model.backward(x_noisy=client.noisy_imgs[:client.t.shape[0]].to(client.device),
+                                                                    images=x0[:client.t.shape[0]].to(client.device),
                                                                     times=client.t_reshape,
-                                                                    noise=client.eta[:client.t.shape[0]],
-                                                                    log_snr=client.log_snr,
+                                                                    noise=client.eta[:client.t.shape[0]].to(client.device),
+                                                                    log_snr=client.log_snr[:client.t.shape[0]].to(client.device),
                                                                     alpha=client.alpha,
                                                                     sigma=client.sigma,
                                                                     noise_scheduler=client.noise_scheduler, 
-                                                                    text_embeds=label_batch)
+                                                                    text_embeds=label_batch[0][:client.t.shape[0]].to(client.device),
+                                                                    text_masks=label_batch[1][:client.t.shape[0]].to(client.device))
                     else:
                         client.loss = None
                     client.energy_usage['DENOISING_PROCESS'] = client.tracker.stop_task(task_name='DENOISING_PROCESS')
