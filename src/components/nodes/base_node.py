@@ -17,13 +17,14 @@ class BaseNode():
         self._id=id
         self.node_type=node_type
         self.model_type=model_type
+        imagen_timesteps=SETTINGS.imagen_model['timesteps']
         
         # Model
         match self.model_type:
             case 'DDPM':
                 self.model=Diffusion_Model(unet=Unet(**SETTINGS.unet['DEFAULT']), device=device, path_save_model=f'./src/assets/diffusion_model_{self.id}.pt', **SETTINGS.diffusion_model['DEFAULT'])
             case 'IMAGEN':
-                self.model=Imagen(unets=[EfficientUnet(**SETTINGS.efficient_unet['UNET_64'])], path_save_model=f'./src/assets/imagen_model_CELEB-A_{self.id}.pt', **SETTINGS.imagen_model['DEFAULT']).to(device)
+                self.model=Imagen(unets=[EfficientUnet(**SETTINGS.efficient_unet['UNET_64'])], path_save_model=f'./src/assets/{imagen_timesteps}/imagen_model_CELEB-A_{self.id}.pt', **SETTINGS.imagen_model['DEFAULT']).cuda()
         
         # Resources
         self.tracker = EmissionsTracker(save_to_logger=True, logging_logger=LOGGER, log_level="error")

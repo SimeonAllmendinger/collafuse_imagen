@@ -39,7 +39,7 @@ def main(path_tmp_dir: str):
     clients = {}
     n_clients = len(SETTINGS.clients)
     image_chw = SETTINGS.diffusion_model['DEFAULT']['image_chw']
-    client_device_idx = 1
+    client_device_idx = 0
 
     LOGGER.info('Start initializing clients...')
     
@@ -54,8 +54,9 @@ def main(path_tmp_dir: str):
         data_test_sample_interval = [1, int(n_test_items) + 1]
         
         # device
-        client_device = torch.device(client_device_idx if torch.cuda.is_available() else 'cpu')
-        #client_device_idx = client_device_idx+1 if client_device_idx < 3 else 1
+        client_device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+        LOGGER.info(f'{client_device}')
+        #client_device_idx = client_device_idx if client_device_idx < len(available_gpus)-1 else 0
         
         client = Client(**client_dict, 
                         device=client_device, 
@@ -68,7 +69,7 @@ def main(path_tmp_dir: str):
         
         LOGGER.info(f'{client_name} created with {len(client.ds_train)} train samples and {len(client.ds_test)} test samples')
     
-    cloud_device = torch.device(0 if torch.cuda.is_available() else 'cpu')
+    cloud_device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model_type = SETTINGS.clouds['CLOUD']['model_type']
     cloud = Cloud(device=cloud_device, model_type=model_type)
 

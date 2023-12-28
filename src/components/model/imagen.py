@@ -437,7 +437,8 @@ class Imagen(nn.Module):
         cond_scale = 1,
         pred_objective = 'noise',
         dynamic_threshold = True,
-        use_tqdm = True
+        use_tqdm = True,
+        return_all_timesteps = False
     ):
         device = self.device
 
@@ -489,6 +490,8 @@ class Imagen(nn.Module):
                 cond_video_frames = cond_video_frames,
                 post_cond_video_frames = post_cond_video_frames,
             )
+        
+        imgs = [img]
 
         for times, times_next in tqdm(timesteps, desc = 'sampling loop time step', total = len(timesteps), disable = not use_tqdm):
             is_last_timestep = times_next == 0
@@ -529,6 +532,10 @@ class Imagen(nn.Module):
                         renoised_img
                     )
 
+                imgs.append(img)
+
+        img = img if not return_all_timesteps else torch.stack(imgs, dim=1)
+
         img.clamp_(-1., 1.)
 
         # final inpainting
@@ -544,8 +551,8 @@ class Imagen(nn.Module):
     @beartype
     def sample(
         self,
-        t_min: int,
-        t_max: int,
+        t_min: float,
+        t_max: float,
         noise_img,
         texts: List[str] = None,
         text_masks = None,
@@ -725,6 +732,7 @@ class Imagen(nn.Module):
                     pred_objective = pred_objective,
                     dynamic_threshold = dynamic_threshold,
                     use_tqdm = use_tqdm,
+                    return_all_timesteps = return_all_timesteps,
                     **video_kwargs
                 )
 
@@ -734,6 +742,8 @@ class Imagen(nn.Module):
                 break
 
         output_index = -1 if not return_all_timesteps else slice(None) # either return last unet output or all unet outputs
+        print('Output Index',output_index)
+        print('Length output',len(outputs))
 
         if not return_pil_images:
             return outputs[output_index]

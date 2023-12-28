@@ -1,10 +1,10 @@
 DEFAULT:
-  n_epochs: 3                         # total training steps
+  n_epochs: 5                         # total training steps
   lr: 0.001
   initial_loss: 1.5
-  display: False
+  display: True
   batch_size: 10
-  num_workers: 2 
+  num_workers: 1
   loss_lambda: 0.5
   adam_betas: 
   - 0.9
@@ -14,9 +14,10 @@ DEFAULT:
   results_folder: ./results/
   calculate_performance: True          # whether to calculate fid during training
   offset_noise_strength: 0
+  load_existing_model: True
 
 GENERATION:
-  sample_batch_size: 150
-  n_samples: 4050
+  sample_batch_size: 10
+  n_samples: 10
   return_all_timesteps: False
   create_new_samples: False
