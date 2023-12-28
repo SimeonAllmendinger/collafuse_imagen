@@ -21,3 +21,4 @@ wandb
 *.DS_Store
 run_scripts/stderr.txt
 run_scripts/stdout.txt
+.o*
