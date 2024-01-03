@@ -32,10 +32,12 @@ DATA_DIR = './data'
 DATA_URL = 'http://ai.stanford.edu/~acoates/stl10/stl10_binary.tar.gz'
 
 # path to the binary train file with image data
-DATA_PATH = './data/stl10_binary/train_X.bin'
+DATA_TEST_PATH = './data/stl10/stl10_binary/test_X.bin'
+DATA_TRAIN_PATH = './data/stl10/stl10_binary/train_X.bin'
 
 # path to the binary train file with labels
-LABEL_PATH = './data/stl10_binary/train_y.bin'
+LABEL_TRAIN_PATH = './data/stl10/stl10_binary/train_y.bin'
+LABEL_TEST_PATH = './data/stl10/stl10_binary/test_y.bin'
 
 def read_labels(path_to_labels):
     """
@@ -145,17 +147,16 @@ if __name__ == "__main__":
     # download data if needed
     download_and_extract()
 
-    # test to check if the image is read correctly
-    with open(DATA_PATH) as f:
-        image = read_single_image(f)
-        plot_image(image)
-
     # test to check if the whole dataset is read correctly
-    images = read_all_images(DATA_PATH)
+    test_images = read_all_images(DATA_TEST_PATH)
+    train_images = read_all_images(DATA_TRAIN_PATH)
+    images = np.concatenate((train_images, test_images), axis=0)
     print(images.shape)
 
-    labels = read_labels(LABEL_PATH)
+    train_labels = read_labels(LABEL_TRAIN_PATH)
+    test_labels = read_labels(LABEL_TEST_PATH)
+    labels=np.concatenate((train_labels, test_labels), axis=0)
     print(labels.shape)
 
-    # save images to disk
+    ## save images to disk
     save_images(images, labels)

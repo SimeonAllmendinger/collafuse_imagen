@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.curdir))
 
-import math
+import numpy as np
 from random import random
 from beartype.typing import List, Union
 from beartype import beartype
@@ -27,6 +27,11 @@ from imagen_pytorch.imagen_video import Unet3D, resize_video_to, scale_video_tim
 from src.components.utils import functions as func
 from src.components.model.efficient_unet import Unet as EfficientUnet
 from src.components.model.efficient_unet import GaussianDiffusionContinuousTimes, NullUnet
+
+# Setting reproducibility
+SEED = 10
+np.random.seed(SEED)
+torch.manual_seed(SEED)
 
 # main imagen ddpm class, which is a cascading DDPM from Ho et al.
 class Imagen(nn.Module):
@@ -531,12 +536,11 @@ class Imagen(nn.Module):
                         img,
                         renoised_img
                     )
-
+                
+                img.clamp_(-1., 1.)
                 imgs.append(img)
 
         img = img if not return_all_timesteps else torch.stack(imgs, dim=1)
-
-        img.clamp_(-1., 1.)
 
         # final inpainting
 
@@ -741,15 +745,13 @@ class Imagen(nn.Module):
             if func.exists(stop_at_unet_number) and stop_at_unet_number == unet_number:
                 break
 
-        output_index = -1 if not return_all_timesteps else slice(None) # either return last unet output or all unet outputs
-        print('Output Index',output_index)
-        print('Length output',len(outputs))
+        output_index = slice(None) # either return last unet output or all unet outputs
 
         if not return_pil_images:
             return outputs[output_index]
 
         if not return_all_timesteps:
-            outputs = outputs[-1:]
+            outputs = outputs[output_index]
 
         assert not self.is_video, 'converting sampled video tensor to video file is not supported yet'
 

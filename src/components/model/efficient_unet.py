@@ -3,6 +3,8 @@ import os
 sys.path.append(os.path.abspath(os.curdir))
 
 import math
+import random
+import numpy as np
 from functools import partial
 from pathlib import Path
 
@@ -17,6 +19,12 @@ from einops.layers.torch import Rearrange, Reduce
 from imagen_pytorch.t5 import get_encoded_dim, DEFAULT_T5_NAME
 
 from src.components.utils import functions as func
+
+# Setting reproducibility
+SEED = 10
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
 
 class Identity(nn.Module):
     def __init__(self, *args, **kwargs):

@@ -1,5 +1,5 @@
 DEFAULT:
-  n_epochs: 5                         # total training steps
+  n_epochs: 60                         # total training steps
   lr: 0.001
   initial_loss: 1.5
   display: True
@@ -11,10 +11,10 @@ DEFAULT:
   - 0.99
   save_and_sample_every: 1000
   num_samples: 25
-  results_folder: ./results/
+  results_folder: /home/vault/btr0/btr0104h/collafuse/results/
   calculate_performance: True          # whether to calculate fid during training
   offset_noise_strength: 0
-  load_existing_model: True
+  load_existing_model: False
 
 GENERATION:
   sample_batch_size: 10

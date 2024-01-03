@@ -32,7 +32,7 @@ SETTINGS = Settings()
 LOGGER=SETTINGS.logger()
 
 # Setting reproducibility
-SEED = 0
+SEED = 10
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
@@ -58,10 +58,11 @@ class Diffusion_Trainer(object):
                  results_folder='./results',
                  calculate_performance=True,
                  offset_noise_strength=None,
+                 load_existing_model=False,
                  ):
 
-        self.results_folder = Path(results_folder)
-        self.results_folder.mkdir(exist_ok=True)
+        Path(results_folder).mkdir(exist_ok=True)
+        self.results_folder = results_folder
 
         # step counter state
         self.step = 0
@@ -78,7 +79,6 @@ class Diffusion_Trainer(object):
 
         # Parameters
         self.adam_betas = adam_betas
-        self.results_folder = results_folder
         self.offset_noise_strength = offset_noise_strength
 
         # Nodes
@@ -92,6 +92,7 @@ class Diffusion_Trainer(object):
         self.num_workers = num_workers
         self.lr = lr
         self.loss_lambda = loss_lambda
+        self.load_existing_model=load_existing_model
 
         # Visualization
         self.display = display
@@ -128,7 +129,7 @@ class Diffusion_Trainer(object):
                 
             LOGGER.info(f'{client_id} Device: {client.device}')
         
-        if SETTINGS.diffusion_trainer['load_existing_model']:
+        if self.load_existing_model:
             LOGGER.info(f'Load existing models')
             self.load()
         
@@ -174,6 +175,8 @@ class Diffusion_Trainer(object):
         wandb.config['DIFFUSION_MODEL'] = SETTINGS.diffusion_model
         wandb.config['UNET'] = SETTINGS.unet
         wandb.config['CLIENTS'] = SETTINGS.clients
+        wandb.config['IMAGEN'] = SETTINGS.imagen_model
+        wandb.config['EFFICIENT_UNET'] = SETTINGS.efficient_unet
 
         for epoch in tqdm(range(self.n_epochs), desc=f"Training progress", colour="#00ff00", disable=False):
 
@@ -186,7 +189,7 @@ class Diffusion_Trainer(object):
                     total_loss = 0
                     
                     # Loading data
-                    img_batch, label_batch = next(iter(client.dl_train))
+                    img_batch, label_batch, text = next(iter(client.dl_train))
                     x0 = img_batch.cuda()
                     batch_size = len(x0)
                     
@@ -414,7 +417,7 @@ class Diffusion_Trainer(object):
             # Continue sampling using Clients
             for client_id, client in self.clients.items():
                 
-                img_batch, label_batch = next(iter(client.dl_train))
+                img_batch, label_batch, text = next(iter(client.dl_train))
                 
                 noise_img = torch.randn_like(img_batch).cuda()
                 
@@ -435,8 +438,10 @@ class Diffusion_Trainer(object):
                                                                     text_masks=label_batch[1].cuda())[0]
                         
                         LOGGER.info(f'{client.t_cut} - {cloud_img_samples.shape} shape')
+                        
                 if client.t_cut_ratio == 0:
                     client_img_samples = cloud_img_samples[:,-1,...]
+                    img_samples=client_img_samples
                     
                 elif client.t_cut_ratio == 1:
                     match client.model_type:
@@ -480,7 +485,7 @@ class Diffusion_Trainer(object):
                         img_samples=torch.cat([cloud_img_samples[:,:-int(client.t_cut+1),...].cuda(), client_img_samples], dim=1)
                     else:
                         img_samples=client_img_samples
-                    
+                
                 #* Client images
                 for batch_idx, imgs in enumerate(img_samples):
                     wandb_table = wandb.Table(
@@ -492,7 +497,7 @@ class Diffusion_Trainer(object):
                     if testing:
                         image_save_path=self.results_folder + f"testing/{int(client.t_cut_ratio*100)}/image_{client_id}_{image_idx}.png"
                     else:
-                        image_save_path=self.results_folder + f"training/image_{client_id}_{image_idx}.png"
+                        image_save_path=self.results_folder + f"training/image_{int(client.t_cut)}_{client_id}_{image_idx}_{text[batch_idx]}.png"
                     
                     if return_all_timesteps:
                         for timestep_idx, img in enumerate(imgs_raw):
@@ -509,6 +514,8 @@ class Diffusion_Trainer(object):
                         imgs_raw=imgs_raw.transpose(1, 2, 0)
                         img = Image.fromarray(imgs_raw)
                         img.save(image_save_path)
+                        
+                        wandb.log({f'Generated-Images-{client_id}_{batch_idx}_{text[batch_idx]}': wandb.Image(img)})
                 
                 '''#* Cloud Images
                 for batch_idx, cloud_imgs in enumerate(cloud_img_samples[:,-(client.t_cut+1),...]):

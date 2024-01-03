@@ -1,29 +1,29 @@
 CLIENT_1:
   idx: 1
-  dataset_name: CelebA #BraTS2020
-  t_cut_ratio: 0.00
+  dataset_name: CelebA #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.20
   model_type: IMAGEN # DDPM, IMAGEN
 
 CLIENT_2:
   idx: 2
-  dataset_name: CelebA #BraTS2020
-  t_cut_ratio: 0.00
+  dataset_name: CelebA #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.20
   model_type: IMAGEN # DDPM, IMAGEN
   
 CLIENT_3:
   idx: 3
-  dataset_name: CelebA #BraTS2020
-  t_cut_ratio: 0.00
+  dataset_name: CelebA #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.20
   model_type: IMAGEN # DDPM, IMAGEN
 
 CLIENT_4:
   idx: 4
-  dataset_name: CelebA #BraTS2020
-  t_cut_ratio: 0.00
+  dataset_name: CelebA #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.20
   model_type: IMAGEN # DDPM, IMAGEN
 
 CLIENT_5:
   idx: 5
-  dataset_name: CelebA #BraTS2020
-  t_cut_ratio: 0.00
+  dataset_name: CelebA #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.20
   model_type: IMAGEN # DDPM, IMAGEN
