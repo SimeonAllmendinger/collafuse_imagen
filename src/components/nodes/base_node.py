@@ -22,12 +22,14 @@ class BaseNode():
         if not dataset_name:
             dataset_name=''
         
+        self.dataset_name=dataset_name
+        
         # Model
         match self.model_type:
             case 'DDPM':
                 self.model=Diffusion_Model(unet=Unet(**SETTINGS.unet['DEFAULT']), device=device, path_save_model=f'./src/assets/diffusion_model_{self.id}.pt', **SETTINGS.diffusion_model['DEFAULT'])
             case 'IMAGEN':
-                self.model=Imagen(unets=[EfficientUnet(**SETTINGS.efficient_unet['UNET_64'])], path_save_model=f'/home/vault/btr0/btr0104h/collafuse/models/{imagen_timesteps}/imagen_model_{dataset_name}_{self.id}.pt', **SETTINGS.imagen_model['DEFAULT']).cuda()
+                self.model=Imagen(unets=[EfficientUnet(**SETTINGS.efficient_unet['UNET_64'])], path_save_model=f"/home/vault/btr0/btr0104h/collafuse/models/{imagen_timesteps}/imagen_model_{dataset_name}_{self.id}_s-{SETTINGS.imagen_model['DEFAULT']['image_sizes'][0]}.pt", **SETTINGS.imagen_model['DEFAULT']).cuda()
         
         # Resources
         self.tracker = EmissionsTracker(save_to_logger=True, logging_logger=LOGGER, log_level="error")

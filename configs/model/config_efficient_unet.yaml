@@ -1,7 +1,7 @@
 UNET_64:
   dim: 32
-  num_resnet_blocks: 1
-  cond_dim: Null
+  num_resnet_blocks: 3
+  cond_dim: 512
   num_image_tokens: 4
   num_time_tokens: 2
   learned_sinu_pos_emb_dim: 16
@@ -18,12 +18,20 @@ UNET_64:
   attn_heads: 8
   ff_mult: 2.
   lowres_cond: False                  # for cascading diffusion - https://cascaded-diffusion.github.io/
-  layer_attns: True
+  layer_attns: 
+  - False
+  - True
+  - True 
+  - True
   layer_attns_depth: 1
   layer_mid_attns_depth: 1
   layer_attns_add_text_cond: True     # whether to condition the self-attention blocks with the text embeddings, as described in Appendix D.3.1
   attend_at_middle: True              # whether to have a layer of attention at the bottleneck (can turn off for higher resolution in cascading DDPM, before bringing in efficient attention)
-  layer_cross_attns: True
+  layer_cross_attns: 
+  - False
+  - True
+  - True 
+  - True
   use_linear_attn: False
   use_linear_cross_attn: False
   cond_on_text: True

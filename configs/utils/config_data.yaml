@@ -13,8 +13,8 @@ CelebA:
   path_train_images: data/CelebA/RAW/
   path_labels: data/CelebA/annotations/list_attr_celeba.txt
   path_text_embeds: data/CelebA/annotations/
-  n_train_items: 40 #10177 # classes and 202599 items
-  n_test_items: 40 #10177 # classes and 0 items
+  n_train_items: 5 #40 #10177 # classes and 202599 items
+  n_test_items: 5 #40 #10177 # classes and 0 items
 
 STL10:
   path_train_images: data/stl10/RAW/
@@ -22,3 +22,10 @@ STL10:
   path_text_embeds: data/stl10/annotations/
   n_train_items: 10 # classes and 202599 items
   n_test_items: 10 # classes and 0 items
+
+Birds:
+  path_train_images: data/Birds/images/
+  path_labels: data/Birds/images.txt
+  path_text_embeds: data/Birds/embeds/
+  n_train_items: 5
+  n_test_items: 5

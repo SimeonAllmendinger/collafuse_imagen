@@ -38,7 +38,7 @@ def main(path_tmp_dir: str):
 
     clients = {}
     n_clients = len(SETTINGS.clients)
-    image_chw = SETTINGS.diffusion_model['DEFAULT']['image_chw']
+    image_chw = (1, SETTINGS.imagen_model['DEFAULT']['image_sizes'][0], SETTINGS.imagen_model['DEFAULT']['image_sizes'][0])
     client_device_idx = 0
 
     LOGGER.info('Start initializing clients...')
@@ -71,11 +71,13 @@ def main(path_tmp_dir: str):
     
     cloud_device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model_type = SETTINGS.clouds['CLOUD']['model_type']
-    cloud = Cloud(device=cloud_device, model_type=model_type)
+    dataset_name = SETTINGS.clouds['CLOUD']['dataset_name']
+    id = SETTINGS.clouds['CLOUD']['id']
+    cloud = Cloud(id=id, device=cloud_device, model_type=model_type, dataset_name=dataset_name)
 
     diffusion_trainer = Diffusion_Trainer(clients=clients, cloud=cloud, **SETTINGS.diffusion_trainer['DEFAULT'])
     diffusion_trainer.train()
-    #diffusion_trainer.test()
+    diffusion_trainer.test()
     
 if __name__ == '__main__':
     args = parser.parse_args()

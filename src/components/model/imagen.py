@@ -24,9 +24,13 @@ from einops import rearrange, repeat, reduce
 from imagen_pytorch.t5 import t5_encode_text, get_encoded_dim, DEFAULT_T5_NAME
 from imagen_pytorch.imagen_video import Unet3D, resize_video_to, scale_video_time
 
+from src.components.utils.settings import Settings
 from src.components.utils import functions as func
 from src.components.model.efficient_unet import Unet as EfficientUnet
 from src.components.model.efficient_unet import GaussianDiffusionContinuousTimes, NullUnet
+
+SETTINGS = Settings()
+LOGGER=SETTINGS.logger()
 
 # Setting reproducibility
 SEED = 10
@@ -537,9 +541,10 @@ class Imagen(nn.Module):
                         renoised_img
                     )
                 
-                img.clamp_(-1., 1.)
                 imgs.append(img)
-
+                
+        img.clamp_(-1., 1.)
+                
         img = img if not return_all_timesteps else torch.stack(imgs, dim=1)
 
         # final inpainting
@@ -579,6 +584,7 @@ class Imagen(nn.Module):
         stop_at_unet_number = None,
         return_all_timesteps = False,
         return_pil_images = False,
+        return_all_unet_outputs = False,
         device = None,
         use_tqdm = True,
         use_one_unet_in_gpu = True
@@ -745,13 +751,13 @@ class Imagen(nn.Module):
             if func.exists(stop_at_unet_number) and stop_at_unet_number == unet_number:
                 break
 
-        output_index = slice(None) # either return last unet output or all unet outputs
-
+        output_index = -1 if not return_all_unet_outputs else slice(None) # either return last unet output or all unet outputs
+        
         if not return_pil_images:
             return outputs[output_index]
 
-        if not return_all_timesteps:
-            outputs = outputs[output_index]
+        if not return_all_unet_outputs:
+            outputs = outputs[-1:]
 
         assert not self.is_video, 'converting sampled video tensor to video file is not supported yet'
 

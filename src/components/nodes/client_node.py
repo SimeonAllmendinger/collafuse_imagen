@@ -44,11 +44,16 @@ class Dataset(Dataset):
         is_dataset_cloud=False,
         path_labels=None,
         path_text_embeds=None,
-        dataset_name=None
+        dataset_name=None,
+        celeb_a_attributes=None,
+        birds_attributes=None
         ):
         
         super().__init__()
         self.folder = folder
+        self.dataset_name=dataset_name
+        self.client_id = client_id
+        self.path_text_embeds = path_text_embeds
         if data_sample_interval:
             self.data_sample_min, self.data_sample_max = data_sample_interval
 
@@ -64,104 +69,184 @@ class Dataset(Dataset):
         ])
         
         self.image_chw = image_chw
-        if is_dataset_results:
+        '''if is_dataset_results:
             self.paths = [p for ext in exts for p in Path(f'{folder}').glob(f'{int(t_cut_ratio*100)}/image_{client_id}_*.{ext}')]
         elif is_dataset_cloud:
             self.paths = [p for ext in exts for p in Path(f'{folder}').glob(f'{int(t_cut_ratio*100)}_cloud/image_{client_id}_*.{ext}')]
-        else:
-            if path_labels:
-                if dataset_name == 'CelebA':
-                    df = pd.read_csv(path_labels, 
-                                    sep=r'\s+', header=1)
+        else:'''
+        
+        match self.dataset_name:
+            case 'CelebA':
                     
-                    # Filter rows where at least one of the specified columns has a value of 1
-                    df = df[df.iloc[:,self.data_sample_min:self.data_sample_max].eq(1).any(axis=1)]
-                    self.paths = df.iloc[:,0].to_list()
-                    
-                    # Extract column names with at least one '1' and convert the list of column names to a string
-                    self.texts = df.apply(lambda row: ' '.join(row.index[row == 1].tolist()), axis=1).to_list()
-                    
-                    len_chunk=2000
-                    for j in tqdm(range(int(len(self.texts)/len_chunk))):
-                        
-                        path_text_masks_file = f'{path_text_embeds}text_masks_{client_id}_{len(self.paths)}_{j}.pt'
-                        path_text_embeds_file = f'{path_text_embeds}text_embeds_{client_id}_{len(self.paths)}_{j}.pt'
-                        if not os.path.exists(path_text_embeds_file) or not os.path.exists(path_text_masks_file):
-                            if (j+1)*len_chunk > len(self.texts):
-                                text_embeds, text_masks = t5_encode_text(self.texts[j*len_chunk:], 
-                                                                device=torch.device(1), 
-                                                                return_attn_mask = True)
-                            else:
-                                text_embeds, text_masks = t5_encode_text(self.texts[j*len_chunk:(j+1)*len_chunk], 
-                                                                device=torch.device(1), 
-                                                                return_attn_mask = True)
-                            
-                            # Define the number of elements to extend (zeros) on the right side
-                            num_elements_to_extend = 110 - text_masks.size(1)
-
-                            # Create a tensor of zeros with the desired shape
-                            zeros_extension_embeds = torch.zeros((text_embeds.size(0), num_elements_to_extend, text_embeds.size(2)))
-                            zeros_extension_masks = torch.zeros((text_masks.size(0), num_elements_to_extend))
-
-                            # Concatenate the original tensor with the tensor of zeros along the second dimension
-                            text_embeds = torch.cat((text_embeds.to('cpu'), zeros_extension_embeds), dim=1)
-                            text_masks = torch.cat((text_masks.to('cpu'), zeros_extension_masks), dim=1)
-
-                            torch.save(text_embeds, path_text_embeds_file)
-                            torch.save(text_masks, path_text_masks_file)
-                        else:
-                            text_embeds = torch.load(path_text_embeds_file, map_location=torch.device('cpu'))
-                            text_masks = torch.load(path_text_masks_file, map_location=torch.device('cpu'))
-                        
-                        if j>0:
-                            self.text_embeds = torch.cat((self.text_embeds,text_embeds), dim=0)
-                            self.text_masks = torch.cat((self.text_masks,text_masks), dim=0)
-                        
-                        else:
-                            self.text_embeds = text_embeds
-                            self.text_masks = text_masks
-                    print(self.text_embeds.shape)
-                        
-                elif dataset_name == 'STL10':
-                    df = pd.read_csv(path_labels, 
-                                    sep=' ', header=None, 
-                                    names=['PATH_IMG', 'CLASS', 'NAME'])
-                    df = df.loc[(df.CLASS >= self.data_sample_min) & (df.CLASS < self.data_sample_max),:]
+                df = pd.read_csv(path_labels, sep=r'\s+', header=1, usecols=['PATH'] + celeb_a_attributes)
                 
-                    self.paths = df.PATH_IMG.to_list()
-                    self.texts = df.NAME.astype(str).to_list() 
+                # Filter rows where at least one of the specified columns has a value of 1
+                df = df[df.eq(1).any(axis=1)]
+                self.paths = df['PATH'].to_list()
                 
-                    path_text_masks_file = f'{path_text_embeds}text_masks_{client_id}_{len(self.paths)}.pt'
-                    path_text_embeds_file = f'{path_text_embeds}text_embeds_{client_id}_{len(self.paths)}.pt'
+                # Extract column names with at least one '1' and convert the list of column names to a string
+                self.texts = df.apply(lambda row: ', '.join(row.index[row == 1].tolist()).replace('_', ' '), axis=1).to_list()
+                
+                self.len_chunk=30000
+                for j in tqdm(range(int(len(self.texts)/self.len_chunk)+1)):
+                    
+                    path_text_masks_file = f'{path_text_embeds}text_masks_{client_id}_{len(self.paths)}_{j}.pt'
+                    path_text_embeds_file = f'{path_text_embeds}text_embeds_{client_id}_{len(self.paths)}_{j}.pt'
+                    
                     if not os.path.exists(path_text_embeds_file) or not os.path.exists(path_text_masks_file):
-                        self.text_embeds, self.text_masks = t5_encode_text(self.texts, 
-                                                        device=torch.device(1), 
-                                                        return_attn_mask = True)
-                        torch.save(self.text_embeds, path_text_embeds_file)
-                        torch.save(self.text_masks, path_text_masks_file)
-                    self.text_embeds = torch.load(path_text_embeds_file, map_location=torch.device('cpu'))
-                    self.text_masks = torch.load(path_text_masks_file, map_location=torch.device('cpu'))
-            else:
+                        if (j+1)*self.len_chunk > len(self.texts):
+                            text_embeds, text_masks = t5_encode_text(self.texts[j*self.len_chunk:], 
+                                                            device=torch.device(1), 
+                                                            return_attn_mask = True)
+                        else:
+                            text_embeds, text_masks = t5_encode_text(self.texts[j*self.len_chunk:(j+1)*self.len_chunk], 
+                                                            device=torch.device(1), 
+                                                            return_attn_mask = True)
+                        
+                        # Define the number of elements to extend (zeros) on the right side
+                        max_mask_size = 20
+                        
+                        assert text_masks.size(1) < max_mask_size, f'mask size exceeds length of {max_mask_size} with {text_masks.size(1)}'
+                        
+                        num_elements_to_extend = max_mask_size - text_masks.size(1)
+                        
+                        # Create a tensor of zeros with the desired shape
+                        zeros_extension_embeds = torch.zeros((text_embeds.size(0), num_elements_to_extend, text_embeds.size(2)))
+                        zeros_extension_masks = torch.zeros((text_masks.size(0), num_elements_to_extend))
+
+                        # Concatenate the original tensor with the tensor of zeros along the second dimension
+                        text_embeds = torch.cat((text_embeds.to('cpu'), zeros_extension_embeds), dim=1)
+                        text_masks = torch.cat((text_masks.to('cpu'), zeros_extension_masks), dim=1) > 0
+
+                        torch.save(text_embeds, path_text_embeds_file)
+                        torch.save(text_masks, path_text_masks_file)
+                    else:
+                        text_embeds = torch.load(path_text_embeds_file, map_location=torch.device('cpu'))
+                        text_masks = torch.load(path_text_masks_file, map_location=torch.device('cpu')) > 0
+                    if j == 0:
+                        self.text_embeds = text_embeds
+                        self.text_masks = text_masks
+                    else:
+                        self.text_embeds = torch.cat((self.text_embeds, text_embeds), dim=0)
+                        self.text_masks = torch.cat((self.text_masks, text_masks), dim=0)
+            
+            case 'Birds':
+                df_img = pd.read_csv(path_labels, sep=' ', header=0)  
+                df_labels = pd.read_csv('/home/woody/btr0/btr0104h/data/Birds/attributes/image_attribute_labels.txt', sep=r'\s+', header=0, usecols=[0,1,2])
+                df_att = pd.read_csv('/home/woody/btr0/btr0104h/data/Birds/attributes/attributes.txt', sep=' ', header=0)
+                
+                df_labels = df_labels.loc[(df_labels.iloc[:,1].isin(birds_attributes)) & (df_labels.iloc[:,2] == 1),:]
+                list_img_unique = sorted(df_labels.iloc[:,0].unique().tolist())
+                
+                self.paths = df_img.loc[df_img.iloc[:,0].isin(list_img_unique),:].iloc[:,1].values.tolist()
+                self.texts = [', '.join([df_att.iloc[class_idx,1].replace('_',' ').replace('::', ' ') for class_idx in sorted(df_labels.loc[(df_labels.iloc[:,0] == img_idx),:].iloc[:,1].values.tolist())]) for img_idx in sorted(list_img_unique)]
+                
+                for path in self.paths:
+                    img = Image.open(os.path.join(self.folder,path))
+                    img= self.transform(img)
+                    if img.shape[0] == 1:
+                        index = self.paths.index(path)
+                        self.texts.pop(index)
+                        self.paths.pop(index)
+                    
+                self.len_chunk=30000
+                for j in tqdm(range(int(len(self.texts)/self.len_chunk)+1)):
+                    
+                    path_text_masks_file = f'{path_text_embeds}text_masks_{client_id}_{len(self.paths)}_{j}.pt'
+                    path_text_embeds_file = f'{path_text_embeds}text_embeds_{client_id}_{len(self.paths)}_{j}.pt'
+                    
+                    if not os.path.exists(path_text_embeds_file) or not os.path.exists(path_text_masks_file):
+                        if (j+1)*self.len_chunk > len(self.texts):
+                            text_embeds, text_masks = t5_encode_text(self.texts[j*self.len_chunk:], 
+                                                            device=torch.device(1), 
+                                                            return_attn_mask = True)
+                        else:
+                            text_embeds, text_masks = t5_encode_text(self.texts[j*self.len_chunk:(j+1)*self.len_chunk], 
+                                                            device=torch.device(1), 
+                                                            return_attn_mask = True)
+                        
+                        # Define the number of elements to extend (zeros) on the right side
+                        max_mask_size = 25
+                        
+                        assert text_masks.size(1) < max_mask_size, f'mask size exceeds length of {max_mask_size} with {text_masks.size(1)}'
+                        
+                        num_elements_to_extend = max_mask_size - text_masks.size(1)
+                        
+                        # Create a tensor of zeros with the desired shape
+                        zeros_extension_embeds = torch.zeros((text_embeds.size(0), num_elements_to_extend, text_embeds.size(2)))
+                        zeros_extension_masks = torch.zeros((text_masks.size(0), num_elements_to_extend))
+
+                        # Concatenate the original tensor with the tensor of zeros along the second dimension
+                        text_embeds = torch.cat((text_embeds.to('cpu'), zeros_extension_embeds), dim=1)
+                        text_masks = torch.cat((text_masks.to('cpu'), zeros_extension_masks), dim=1) > 0
+
+                        torch.save(text_embeds, path_text_embeds_file)
+                        torch.save(text_masks, path_text_masks_file)
+                    else:
+                        text_embeds = torch.load(path_text_embeds_file, map_location=torch.device('cpu'))
+                        text_masks = torch.load(path_text_masks_file, map_location=torch.device('cpu')) > 0
+                    if j == 0:
+                        self.text_embeds = text_embeds
+                        self.text_masks = text_masks
+                    else:
+                        self.text_embeds = torch.cat((self.text_embeds, text_embeds), dim=0)
+                        self.text_masks = torch.cat((self.text_masks, text_masks), dim=0)
+                        
+                LOGGER.debug(f'Number of images: {self.paths[:5]}')
+                LOGGER.debug(f'Number of texts: {self.texts[:5]}')
+                LOGGER.debug(f'Number of text embeds: {self.text_embeds.size()}')
+                LOGGER.debug(f'Number of text masks: {self.text_masks.size()}')
+            
+            case 'STL10':
+                df = pd.read_csv(path_labels, 
+                                sep=' ', header=None, 
+                                names=['PATH_IMG', 'CLASS', 'NAME'])
+                df = df.loc[(df.CLASS >= self.data_sample_min) & (df.CLASS < self.data_sample_max),:]
+            
+                self.paths = df.PATH_IMG.to_list()
+                self.texts = df.NAME.astype(str).to_list() 
+            
+                path_text_masks_file = f'{path_text_embeds}text_masks_{client_id}_{len(self.paths)}.pt'
+                path_text_embeds_file = f'{path_text_embeds}text_embeds_{client_id}_{len(self.paths)}.pt'
+                if not os.path.exists(path_text_embeds_file) or not os.path.exists(path_text_masks_file):
+                    self.text_embeds, self.text_masks = t5_encode_text(self.texts, 
+                                                    device=torch.device(1), 
+                                                    return_attn_mask = True)
+                    torch.save(self.text_embeds, path_text_embeds_file)
+                    torch.save(self.text_masks, path_text_masks_file)
+                self.text_embeds = torch.load(path_text_embeds_file, map_location=torch.device('cpu'))
+                self.text_masks = torch.load(path_text_masks_file, map_location=torch.device('cpu'))
+            
+            case _:
                 self.paths = [p for ext in exts for k in range(self.data_sample_min, self.data_sample_max) for p in Path(f'{folder}').glob(f'**/{k:03d}-*.{ext}')]
         
-        # define inception frame size
+        '''# define inception frame size
         self.inception_width = 299
         self.inception_height = 299
         
         # compute center offset
         self.inception_x_center = (self.inception_width - self.image_chw[2]) // 2
-        self.inception_y_center = (self.inception_height - self.image_chw[1]) // 2
+        self.inception_y_center = (self.inception_height - self.image_chw[1]) // 2'''
         
     def __len__(self):
         return len(self.paths)
 
     def __getitem__(self, index):
         path = os.path.join(self.folder, self.paths[index])
-        label = (self.text_embeds[index], self.text_masks[index])
         text = self.texts[index]
+        
+        match self.dataset_name:
+            case 'STL10':
+                label = (self.text_embeds[index], self.text_masks[index])
+            case 'CelebA':
+                label = (self.text_embeds[index], self.text_masks[index])
+            case 'Birds':
+                label = (self.text_embeds[index], self.text_masks[index])
           
         img = Image.open(path)
         img= self.transform(img)
+        
+        assert img.shape[0] != 1, f'{path} | {img.shape[0]}'
         
         '''# create new image of desired size and color (blue) for padding
         inception_frame = np.zeros((self.inception_height, self.inception_width), dtype=np.uint8)
@@ -184,6 +269,8 @@ class Client(BaseNode):
                 t_cut_ratio: float,
                 path_tmp_dir: str,
                 model_type: str,
+                celeb_a_attributes: [str] = None,
+                birds_attributes: [str] = None
                 ):
         
         # Call the parent class constructor
@@ -226,7 +313,20 @@ class Client(BaseNode):
                                         client_id=self.id,
                                         path_labels=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_labels']),
                                         path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_text_embeds']),
-                                        dataset_name=dataset_name)
+                                        dataset_name=dataset_name,
+                                        celeb_a_attributes=celeb_a_attributes)
+                self.ds_test = []
+            
+            case 'Birds':
+                self.ds_train = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_train_images']), 
+                                        image_chw=image_chw,
+                                        data_sample_interval=data_train_sample_interval,
+                                        t_cut_ratio=self.t_cut_ratio,
+                                        client_id=self.id,
+                                        path_labels=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_labels']),
+                                        path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_text_embeds']),
+                                        dataset_name=dataset_name,
+                                        birds_attributes=birds_attributes)
                 self.ds_test = []
             
             case 'STL10':
@@ -252,7 +352,7 @@ class Client(BaseNode):
     
     @property
     def path_save_model(self):
-        path = self.model.path_save_model.replace('.pt',f'_{self.t_cut_ratio}.pt')
+        path = self.model.path_save_model.replace('.pt',f"_tc-{self.t_cut_ratio}.pt")
         return path
         
     def set_dl(self, batch_size: int, num_workers: int) -> DataLoader:
