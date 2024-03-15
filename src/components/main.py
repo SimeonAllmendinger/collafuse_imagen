@@ -39,7 +39,7 @@ def main(path_tmp_dir: str):
     clients = {}
     n_clients = len(SETTINGS.clients)
     image_chw = (1, SETTINGS.imagen_model['DEFAULT']['image_sizes'][0], SETTINGS.imagen_model['DEFAULT']['image_sizes'][0])
-    client_device_idx = 0
+    #client_device_idx = 0
 
     LOGGER.info('Start initializing clients...')
     
@@ -50,19 +50,15 @@ def main(path_tmp_dir: str):
         n_test_items = SETTINGS.data[client_dict['dataset_name']]['n_test_items']
         model_type = client_dict['model_type']
         
-        data_train_sample_interval = [int(n_train_items/(n_clients)*i) + 1 if i>0 else 1, int(n_train_items/(n_clients) * (i+1)) + 1]
-        data_test_sample_interval = [1, int(n_test_items) + 1]
-        
         # device
         client_device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-        LOGGER.info(f'{client_device}')
         #client_device_idx = client_device_idx if client_device_idx < len(available_gpus)-1 else 0
         
         client = Client(**client_dict, 
                         device=client_device, 
                         image_chw=image_chw, 
-                        data_train_sample_interval=data_train_sample_interval,
-                        data_test_sample_interval=data_test_sample_interval,
+                        n_train_items=n_train_items,
+                        n_test_items=n_test_items,
                         path_tmp_dir=path_tmp_dir)
         
         clients[client.id] = client
@@ -72,12 +68,16 @@ def main(path_tmp_dir: str):
     cloud_device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model_type = SETTINGS.clouds['CLOUD']['model_type']
     dataset_name = SETTINGS.clouds['CLOUD']['dataset_name']
-    id = SETTINGS.clouds['CLOUD']['id']
-    cloud = Cloud(id=id, device=cloud_device, model_type=model_type, dataset_name=dataset_name)
+    cloud_id = SETTINGS.clouds['CLOUD']['id']
+    cloud = Cloud(id=cloud_id, device=cloud_device, model_type=model_type, dataset_name=dataset_name)
 
     diffusion_trainer = Diffusion_Trainer(clients=clients, cloud=cloud, **SETTINGS.diffusion_trainer['DEFAULT'])
-    diffusion_trainer.train()
-    diffusion_trainer.test()
+    
+    match SETTINGS.diffusion_trainer['mode']:
+        case 'train':
+            diffusion_trainer.train()
+        case 'test':
+            diffusion_trainer.test()
     
 if __name__ == '__main__':
     args = parser.parse_args()

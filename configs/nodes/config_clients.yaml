@@ -1,29 +1,100 @@
 CLIENT_1:
   idx: 1
-  dataset_name: CelebA #STL10 #CelebA BraTS2020
-  t_cut_ratio: 0.20
+  dataset_name: Birds #Birds #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.00
   model_type: IMAGEN # DDPM, IMAGEN
+  celeb_a_attributes: 
+    - Blond_Hair
+    - Brown_Hair
+    - Black_Hair
+    - Gray_Hair
+    - Bald
+  birds_attributes:
+    - 1     # has_bill_shape::curved_(up_or_down)
+    - 2     # has_bill_shape::dagger
+    - 3     # has_bill_shape::hooked
+    - 4     # has_bill_shape::needle
+    - 5     # has_bill_shape::hooked_seabird
+    - 6     # has_bill_shape::spatulate
+    - 7     # has_bill_shape::all-purpose
+    - 8     # has_bill_shape::cone
 
 CLIENT_2:
   idx: 2
-  dataset_name: CelebA #STL10 #CelebA BraTS2020
-  t_cut_ratio: 0.20
+  dataset_name: Birds #Birds #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.00
   model_type: IMAGEN # DDPM, IMAGEN
+  celeb_a_attributes:
+    - Wearing_Necklace
+    - Wearing_Earrings
+  birds_attributes:
+    - 10   # has_wing_color::blue
+    - 11   # has_wing_color::brown
+    - 12   # has_wing_color::iridescent
+    - 13   # has_wing_color::purple
+    - 14   # has_wing_color::rufous
+    - 15   # has_wing_color::grey
+    - 16   # has_wing_color::yellow
+    - 17   # has_wing_color::olive
+    - 18   # has_wing_color::green
   
 CLIENT_3:
   idx: 3
-  dataset_name: CelebA #STL10 #CelebA BraTS2020
-  t_cut_ratio: 0.20
+  dataset_name: Birds #Birds #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.00
   model_type: IMAGEN # DDPM, IMAGEN
+  celeb_a_attributes:
+    - Wavy_Hair
+    - Straight_Hair
+    - Bangs
+  birds_attributes:
+    - 30    # has_upperparts_color::grey
+    - 31    # has_upperparts_color::yellow
+    - 32    # has_upperparts_color::olive
+    - 33    # has_upperparts_color::green
+    - 34    # has_upperparts_color::pink
+    - 35    # has_upperparts_color::orange
+    - 36    # has_upperparts_color::black
+    - 37    # has_upperparts_color::white
+    - 38    # has_upperparts_color::red
+    - 39    # has_upperparts_color::buff
 
 CLIENT_4:
   idx: 4
-  dataset_name: CelebA #STL10 #CelebA BraTS2020
-  t_cut_ratio: 0.20
+  dataset_name: Birds #Birds #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.00
   model_type: IMAGEN # DDPM, IMAGEN
+  celeb_a_attributes:
+    - Bushy_Eyebrows
+    - Arched_Eyebrows
+  birds_attributes:
+    - 69    # has_back_color::orange
+    - 70    # has_back_color::black
+    - 71    # has_back_color::white
+    - 72    # has_back_color::red
+    - 73    # has_back_color::buff
+    - 74    # has_tail_shape::forked_tail
+    - 75    # has_tail_shape::rounded_tail
+    - 76    # has_tail_shape::notched_tail
+    - 77    # has_tail_shape::fan-shaped_tail
 
 CLIENT_5:
   idx: 5
-  dataset_name: CelebA #STL10 #CelebA BraTS2020
-  t_cut_ratio: 0.20
+  dataset_name: Birds #Birds #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.00
   model_type: IMAGEN # DDPM, IMAGEN
+  celeb_a_attributes:
+  - Eyeglasses
+  - Narrow_Eyes
+  - Bags_Under_Eyes
+  birds_attributes:
+    - 136     # has_eye_color::blue
+    - 137     # has_eye_color::brown
+    - 138     # has_eye_color::purple
+    - 139     # has_eye_color::rufous
+    - 140     # has_eye_color::grey
+    - 141     # has_eye_color::yellow
+    - 142     # has_eye_color::olive
+    - 143     # has_eye_color::green
+    - 144     # has_eye_color::pink
+    - 145     # has_eye_color::orange

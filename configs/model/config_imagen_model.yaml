@@ -1,10 +1,10 @@
 DEFAULT:
   image_sizes:                                # for cascading ddpm, image size at each stage
-     - 64                             
+     - 64                            
   text_encoder_name: google/t5-v1_1-base
-  text_embed_dim: Null
+  text_embed_dim: 768
   channels: 3
-  timesteps: 400
+  timesteps: 1000
   cond_drop_prob: 0.1
   loss_type: l2
   noise_schedules: cosine

@@ -1,23 +1,26 @@
+mode: train # train, test
+
 DEFAULT:
-  n_epochs: 10000                         # total training steps
+  n_epochs: 2000                         # total training steps
   lr: 0.001
   initial_loss: 1.5
   display: True
-  batch_size: 10
+  batch_size: 50 # 50 (64), 4 (128)
   num_workers: 2
   loss_lambda: 0.5
   adam_betas: 
   - 0.9
   - 0.99
-  save_and_sample_every: 300
+  save_and_sample_every: 500
   num_samples: 25
   results_folder: /home/vault/btr0/btr0104h/collafuse/results/
   calculate_performance: True          # whether to calculate fid during training
   offset_noise_strength: 0
-  load_existing_model: False
+  load_existing_model: True
+  pretrain_client_from_cloud: False
 
 GENERATION:
-  sample_batch_size: 10
+  sample_batch_size: 100
   n_samples: 10
   return_all_timesteps: False
   create_new_samples: True

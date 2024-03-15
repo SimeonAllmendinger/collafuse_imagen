@@ -1,3 +1,4 @@
 CLOUD:
-  idx: 1
+  id: CLOUD_0
   model_type: IMAGEN # DDPM, IMAGEN
+  dataset_name: Birds #CelebA #STL10 #Birds

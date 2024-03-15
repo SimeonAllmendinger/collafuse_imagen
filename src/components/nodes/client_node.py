@@ -16,7 +16,7 @@ from functools import partial
 from cleanfid import fid, features, clip_features
 from cleanfid import utils as fid_utils
 
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision.datasets.mnist import MNIST, FashionMNIST
 from torchvision import transforms as T
 
@@ -34,28 +34,24 @@ class Dataset(Dataset):
         self,
         folder: str,
         image_chw: int,
-        data_sample_interval: list, # interval of data sample
         t_cut_ratio: float,
         client_id: str,
         exts = ['jpg', 'jpeg', 'png', 'tiff'],
         augment_horizontal_flip = False,
         convert_image_to = None,
-        is_dataset_results=False,
-        is_dataset_cloud=False,
         path_labels=None,
         path_text_embeds=None,
         dataset_name=None,
-        celeb_a_attributes=None,
-        birds_attributes=None
+        attributes=None,
+        len_chunk=30000
         ):
         
         super().__init__()
+            
         self.folder = folder
         self.dataset_name=dataset_name
         self.client_id = client_id
         self.path_text_embeds = path_text_embeds
-        if data_sample_interval:
-            self.data_sample_min, self.data_sample_max = data_sample_interval
 
         maybe_convert_fn = partial(func.convert_image_to_fn, convert_image_to) if func.exists(convert_image_to) else nn.Identity()
 
@@ -69,16 +65,16 @@ class Dataset(Dataset):
         ])
         
         self.image_chw = image_chw
-        '''if is_dataset_results:
-            self.paths = [p for ext in exts for p in Path(f'{folder}').glob(f'{int(t_cut_ratio*100)}/image_{client_id}_*.{ext}')]
-        elif is_dataset_cloud:
-            self.paths = [p for ext in exts for p in Path(f'{folder}').glob(f'{int(t_cut_ratio*100)}_cloud/image_{client_id}_*.{ext}')]
-        else:'''
         
         match self.dataset_name:
+            case 'BraTS2020':
+                data_train_sample_interval = [int(n_train_items/(n_clients)*i) + 1 if i>0 else 1, int(n_train_items/(n_clients) * (i+1)) + 1]
+                data_test_sample_interval = [1, int(n_test_items) + 1]
+                data_sample_min, data_sample_max = data_train_sample_interval if is_dataset_results else data_test_sample_interval
+                
             case 'CelebA':
                     
-                df = pd.read_csv(path_labels, sep=r'\s+', header=1, usecols=['PATH'] + celeb_a_attributes)
+                df = pd.read_csv(path_labels, sep=r'\s+', header=1, usecols=['PATH'] + attributes)
                 
                 # Filter rows where at least one of the specified columns has a value of 1
                 df = df[df.eq(1).any(axis=1)]
@@ -87,19 +83,18 @@ class Dataset(Dataset):
                 # Extract column names with at least one '1' and convert the list of column names to a string
                 self.texts = df.apply(lambda row: ', '.join(row.index[row == 1].tolist()).replace('_', ' '), axis=1).to_list()
                 
-                self.len_chunk=30000
-                for j in tqdm(range(int(len(self.texts)/self.len_chunk)+1)):
+                for j in tqdm(range(int(len(self.texts)/len_chunk)+1)):
                     
                     path_text_masks_file = f'{path_text_embeds}text_masks_{client_id}_{len(self.paths)}_{j}.pt'
                     path_text_embeds_file = f'{path_text_embeds}text_embeds_{client_id}_{len(self.paths)}_{j}.pt'
                     
                     if not os.path.exists(path_text_embeds_file) or not os.path.exists(path_text_masks_file):
-                        if (j+1)*self.len_chunk > len(self.texts):
-                            text_embeds, text_masks = t5_encode_text(self.texts[j*self.len_chunk:], 
+                        if (j+1)*len_chunk > len(self.texts):
+                            text_embeds, text_masks = t5_encode_text(self.texts[j*len_chunk:], 
                                                             device=torch.device(1), 
                                                             return_attn_mask = True)
                         else:
-                            text_embeds, text_masks = t5_encode_text(self.texts[j*self.len_chunk:(j+1)*self.len_chunk], 
+                            text_embeds, text_masks = t5_encode_text(self.texts[j*len_chunk:(j+1)*len_chunk], 
                                                             device=torch.device(1), 
                                                             return_attn_mask = True)
                         
@@ -132,10 +127,10 @@ class Dataset(Dataset):
             
             case 'Birds':
                 df_img = pd.read_csv(path_labels, sep=' ', header=0)  
-                df_labels = pd.read_csv('/home/woody/btr0/btr0104h/data/Birds/attributes/image_attribute_labels.txt', sep=r'\s+', header=0, usecols=[0,1,2])
+                df_labels = pd.read_csv('/home/woody/btr0/btr0104h/data/Birds/attributes/image_attribute_labels.txt', sep=r'\s+', header=0, usecols=[0,1,2,3])
                 df_att = pd.read_csv('/home/woody/btr0/btr0104h/data/Birds/attributes/attributes.txt', sep=' ', header=0)
                 
-                df_labels = df_labels.loc[(df_labels.iloc[:,1].isin(birds_attributes)) & (df_labels.iloc[:,2] == 1),:]
+                df_labels = df_labels.loc[(df_labels.iloc[:,1].isin(attributes)) & (df_labels.iloc[:,2] == 1) & (df_labels.iloc[:,3] > 2),:]
                 list_img_unique = sorted(df_labels.iloc[:,0].unique().tolist())
                 
                 self.paths = df_img.loc[df_img.iloc[:,0].isin(list_img_unique),:].iloc[:,1].values.tolist()
@@ -143,8 +138,8 @@ class Dataset(Dataset):
                 
                 for path in self.paths:
                     img = Image.open(os.path.join(self.folder,path))
-                    img= self.transform(img)
-                    if img.shape[0] == 1:
+                    img = self.transform(img)
+                    if img.shape[0] != 3:
                         index = self.paths.index(path)
                         self.texts.pop(index)
                         self.paths.pop(index)
@@ -166,7 +161,7 @@ class Dataset(Dataset):
                                                             return_attn_mask = True)
                         
                         # Define the number of elements to extend (zeros) on the right side
-                        max_mask_size = 25
+                        max_mask_size = 30
                         
                         assert text_masks.size(1) < max_mask_size, f'mask size exceeds length of {max_mask_size} with {text_masks.size(1)}'
                         
@@ -220,14 +215,6 @@ class Dataset(Dataset):
             case _:
                 self.paths = [p for ext in exts for k in range(self.data_sample_min, self.data_sample_max) for p in Path(f'{folder}').glob(f'**/{k:03d}-*.{ext}')]
         
-        '''# define inception frame size
-        self.inception_width = 299
-        self.inception_height = 299
-        
-        # compute center offset
-        self.inception_x_center = (self.inception_width - self.image_chw[2]) // 2
-        self.inception_y_center = (self.inception_height - self.image_chw[1]) // 2'''
-        
     def __len__(self):
         return len(self.paths)
 
@@ -246,17 +233,10 @@ class Dataset(Dataset):
         img = Image.open(path)
         img= self.transform(img)
         
-        assert img.shape[0] != 1, f'{path} | {img.shape[0]}'
+        assert img.shape[0] == 3, f'{path} has image shape of {img.shape[0]}'
         
-        '''# create new image of desired size and color (blue) for padding
-        inception_frame = np.zeros((self.inception_height, self.inception_width), dtype=np.uint8)
-        
-        # copy img image into center of result image
-        inception_frame[self.inception_y_center:self.inception_y_center+self.image_chw[1], self.inception_x_center:self.inception_x_center+self.image_chw[2]] = func.unnormalize_to_zero_to_one(img.cpu().numpy().squeeze()* 255).astype(np.uint8)
-        inception_frame=np.stack((inception_frame,)*3, axis=-1)
-        inception_img=torch.tensor(func.normalize_to_neg_one_to_one(inception_frame)).permute(2,0,1)'''
-        
-        return img, label, text #inception_img
+        return img, label, text
+    
     
 class Client(BaseNode):
     def __init__(self, 
@@ -264,13 +244,14 @@ class Client(BaseNode):
                 device, 
                 dataset_name: str,
                 image_chw: int,
-                data_train_sample_interval: list,
-                data_test_sample_interval: list,
+                n_train_items: int,
+                n_test_items: list,
                 t_cut_ratio: float,
                 path_tmp_dir: str,
                 model_type: str,
                 celeb_a_attributes: [str] = None,
-                birds_attributes: [str] = None
+                birds_attributes: [str] = None,
+                seed: int = 42,
                 ):
         
         # Call the parent class constructor
@@ -305,29 +286,36 @@ class Client(BaseNode):
                                     data_sample_interval=data_test_sample_interval,
                                     t_cut_ratio=self.t_cut_ratio,
                                     client_id=self.id)
+            
             case 'CelebA':
-                self.ds_train = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_train_images']), 
-                                        image_chw=image_chw,
-                                        data_sample_interval=data_train_sample_interval,
-                                        t_cut_ratio=self.t_cut_ratio,
-                                        client_id=self.id,
-                                        path_labels=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_labels']),
-                                        path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_text_embeds']),
-                                        dataset_name=dataset_name,
-                                        celeb_a_attributes=celeb_a_attributes)
-                self.ds_test = []
+                self.ds = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_train_images']), 
+                                    image_chw=image_chw,
+                                    t_cut_ratio=self.t_cut_ratio,
+                                    client_id=self.id,
+                                    path_labels=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_labels']),
+                                    path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_text_embeds']),
+                                    dataset_name=dataset_name,
+                                    attributes=celeb_a_attributes)
+                g_cpu = torch.Generator()
+                g_cpu.manual_seed(seed)
+                self.ds_train, self.ds_test, self.ds_remainder = random_split(dataset=self.ds, 
+                                                                              lengths=[n_train_items, n_test_items, len(self.ds) - n_train_items - n_test_items],
+                                                                              generator=g_cpu)
             
             case 'Birds':
-                self.ds_train = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_train_images']), 
-                                        image_chw=image_chw,
-                                        data_sample_interval=data_train_sample_interval,
-                                        t_cut_ratio=self.t_cut_ratio,
-                                        client_id=self.id,
-                                        path_labels=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_labels']),
-                                        path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_text_embeds']),
-                                        dataset_name=dataset_name,
-                                        birds_attributes=birds_attributes)
-                self.ds_test = []
+                self.ds = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_train_images']), 
+                                    image_chw=image_chw,
+                                    t_cut_ratio=self.t_cut_ratio,
+                                    client_id=self.id,
+                                    path_labels=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_labels']),
+                                    path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_text_embeds']),
+                                    dataset_name=dataset_name,
+                                    attributes=birds_attributes)
+                g_cpu = torch.Generator()
+                g_cpu.manual_seed(seed)
+                self.ds_train, self.ds_test, self.ds_remainder = random_split(dataset=self.ds, 
+                                                                              lengths=[n_train_items, n_test_items, len(self.ds) - n_train_items - n_test_items],
+                                                                              generator=g_cpu)
             
             case 'STL10':
                 self.ds_train = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['STL10']['path_train_images']), 
@@ -342,9 +330,6 @@ class Client(BaseNode):
                 
             case _:
                 raise ValueError(f'Unknown dataset: {dataset_name}')
-        
-        # Log the length of the train dataset
-        LOGGER.debug(f'Train Dataset length: {len(self.ds_train)}')
         
         # Log the current device name if CUDA is available
         if torch.cuda.is_available():
@@ -503,15 +488,3 @@ class Client(BaseNode):
         features_test_data = np.concatenate(feature_list_test_data)
         
         return features_actual, features_inf_dis, features_test_data      
-    
-
-'''labels = pd.read_csv('data/CelebA/annotations/identity_CelebA.txt', sep=' ', dtype=str).iloc[:,1].to_list()
-print(len(labels))
-for i in tqdm(range(0, int(np.ceil(len(labels)/40000)))):
-    if (i+1)*10000 > len(labels):
-        text_embeds = t5_encode_text(labels[i*40000:], device=torch.device(1))
-    else:
-        text_embeds = t5_encode_text(labels[i*40000:(i+1)*40000], device=torch.device(1))
-    print(text_embeds.shape)
-    torch.save(text_embeds, f'data/CelebA/annotations/text_embeds_base_{i+1}.pt')
-    torch.cuda.empty_cache()'''

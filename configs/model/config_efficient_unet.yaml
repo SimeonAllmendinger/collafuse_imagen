@@ -1,6 +1,10 @@
 UNET_64:
   dim: 32
-  num_resnet_blocks: 3
+  num_resnet_blocks: #3
+    - 2
+    - 4
+    - 8
+    - 8
   cond_dim: 512
   num_image_tokens: 4
   num_time_tokens: 2
