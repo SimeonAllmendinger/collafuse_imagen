@@ -427,6 +427,7 @@ class Imagen(nn.Module):
         shape,
         t_min,
         t_max,
+        n_sampling_timesteps,
         noise_img,
         *,
         noise_scheduler,
@@ -483,9 +484,10 @@ class Imagen(nn.Module):
 
         # time
         timesteps = noise_scheduler.get_sampling_timesteps(batch, 
-                                                           device = device,
-                                                           t_min = t_min,
-                                                           t_max=t_max)
+                                                           device=device,
+                                                           t_min=t_min,
+                                                           t_max=t_max,
+                                                           n_sampling_timesteps=n_sampling_timesteps)
 
         # whether to skip any steps
         skip_steps = func.default(skip_steps, 0)
@@ -562,6 +564,7 @@ class Imagen(nn.Module):
         self,
         t_min: float,
         t_max: float,
+        n_sampling_timesteps: int,
         noise_img,
         texts: List[str] = None,
         text_masks = None,
@@ -726,6 +729,7 @@ class Imagen(nn.Module):
                     shape,
                     t_min=t_min,
                     t_max=t_max,
+                    n_sampling_timesteps=n_sampling_timesteps,
                     noise_img=noise_img,
                     text_embeds = text_embeds,
                     text_mask = text_masks,

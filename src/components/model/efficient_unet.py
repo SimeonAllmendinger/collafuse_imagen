@@ -55,8 +55,8 @@ class GaussianDiffusionContinuousTimes(nn.Module):
     def get_condition(self, times):
         return func.maybe(self.log_snr)(times)
 
-    def get_sampling_timesteps(self, batch, *, device, t_min=0., t_max=1.):
-        times = torch.linspace(t_max, t_min, int(t_max*self.num_timesteps) + 1, device = device)
+    def get_sampling_timesteps(self, batch, *, device, t_min=0., t_max=1., n_sampling_timesteps=1000):
+        times = torch.linspace(t_max, t_min, n_sampling_timesteps + 1, device = device)
         times = repeat(times, 't -> b t', b = batch)
         times = torch.stack((times[:, :-1], times[:, 1:]), dim = 0)
         times = times.unbind(dim = -1)

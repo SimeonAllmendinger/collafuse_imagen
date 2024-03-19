@@ -13,8 +13,7 @@ from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
 from functools import partial
-from cleanfid import fid, features, clip_features
-from cleanfid import utils as fid_utils
+from cleanfid import fid
 
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision.datasets.mnist import MNIST, FashionMNIST
@@ -130,7 +129,7 @@ class Dataset(Dataset):
                 df_labels = pd.read_csv('/home/woody/btr0/btr0104h/data/Birds/attributes/image_attribute_labels.txt', sep=r'\s+', header=0, usecols=[0,1,2,3])
                 df_att = pd.read_csv('/home/woody/btr0/btr0104h/data/Birds/attributes/attributes.txt', sep=' ', header=0)
                 
-                df_labels = df_labels.loc[(df_labels.iloc[:,1].isin(attributes)) & (df_labels.iloc[:,2] == 1) & (df_labels.iloc[:,3] > 2),:]
+                df_labels = df_labels.loc[(df_labels.iloc[:,1].isin(attributes)) & (df_labels.iloc[:,2] == 1) & (df_labels.iloc[:,3] == 4),:]
                 list_img_unique = sorted(df_labels.iloc[:,0].unique().tolist())
                 
                 self.paths = df_img.loc[df_img.iloc[:,0].isin(list_img_unique),:].iloc[:,1].values.tolist()
@@ -161,9 +160,9 @@ class Dataset(Dataset):
                                                             return_attn_mask = True)
                         
                         # Define the number of elements to extend (zeros) on the right side
-                        max_mask_size = 30
+                        max_mask_size = 35
                         
-                        assert text_masks.size(1) < max_mask_size, f'mask size exceeds length of {max_mask_size} with {text_masks.size(1)}'
+                        assert text_masks.size(1) <= max_mask_size, f'mask size exceeds length of {max_mask_size} with {text_masks.size(1)}'
                         
                         num_elements_to_extend = max_mask_size - text_masks.size(1)
                         
@@ -368,123 +367,25 @@ class Client(BaseNode):
                 num_workers=num_workers
             )
 
-    def compute_performance(self):
+    def compute_scores(self, results_folder: str, dir_name: str) -> tuple[float, float, float]:
         
-        #* kid
-        kid_feature_model = features.build_feature_extractor(mode="clean", device=torch.device("cuda:0"))
-        kid_features_actual, kid_features_synthetic, kid_features_test_data = self.get_performance_features(feature_model=kid_feature_model)
-
-        self.kid_score_train = fid.kernel_distance(feats1=kid_features_actual,feats2=kid_features_synthetic,num_subsets=10, max_subset_size=400)
-        self.kid_score_test = fid.kernel_distance(feats1=kid_features_test_data,feats2=kid_features_synthetic,num_subsets=10, max_subset_size=400)
+        LOGGER.info(f'Computing scores for t_cut-{int(self.t_cut)}-{self.id}: {dir_name}...')
+        fid_score = fid.compute_fid(fdir1=os.path.join(results_folder, f'testing/{int(self.t_cut)}/{dir_name}/{self.id}/'), 
+                                        fdir2=os.path.join(results_folder, f'testing/{int(self.t_cut)}/real/{self.id}/'), 
+                                        mode="clean", 
+                                        model_name="inception_v3")
         
-        LOGGER.info(f'CLEAN_FID_SCORE_TRAIN-{self.id}: {self.kid_score_train}')
-        LOGGER.info(f'CLEAN_FID_SCORE_TEST-{self.id}: {self.kid_score_test}')
+        clip_fid_score = fid.compute_fid(fdir1=os.path.join(results_folder, f'testing/{int(self.t_cut)}/{dir_name}/{self.id}/'), 
+                                    fdir2=os.path.join(results_folder, f'testing/{int(self.t_cut)}/real/{self.id}/'), 
+                                    mode="clean", 
+                                    model_name="clip_vit_b_32")
         
-        #* fid
-        #fid_feature_model = features.build_feature_extractor(mode="legacy_pytorch", device=self.device)
+        kid_score = fid.compute_kid(fdir1=os.path.join(results_folder, f'testing/{int(self.t_cut)}/{dir_name}/{self.id}/'), 
+                                    fdir2=os.path.join(results_folder, f'testing/{int(self.t_cut)}/real/{self.id}/'), 
+                                    mode="clean")
         
-        #* fcd
-        #fcd_feature_model = clip_features.CLIP_fx("ViT-B/32", device=self.device)
-
-    def compute_information_disclosure(self):
-        kid_feature_model = features.build_feature_extractor(mode="clean", device=torch.device("cuda:0"))
-        kid_features_actual, kid_features_synthetic, kid_features_test_data = self.get_inf_dis_features(feature_model=kid_feature_model)
-
-        self.kid_inf_dis_train = fid.kernel_distance(feats1=kid_features_actual, feats2=kid_features_synthetic, num_subsets=10, max_subset_size=400)
-        self.kid_inf_dis_test = fid.kernel_distance(feats1=kid_features_test_data, feats2=kid_features_synthetic, num_subsets=10, max_subset_size=400)
+        LOGGER.info(f'CLEAN_FID_SCORE-{self.id}-{dir_name}: {fid_score}')
+        LOGGER.info(f'CLEAN_CLIP_FID_SCORE-{self.id}-{dir_name}: {clip_fid_score}')
+        LOGGER.info(f'CLEAN_KID_SCORE-{self.id}-{dir_name}: {kid_score}')
         
-        self.inf_dis_mse = 0
-        n_images = 0
-        for batch_cloud in tqdm(self.dl_inf_dis):
-            for batch_train in  self.dl_train:
-                for image_cloud in batch_cloud[0]:
-                    for image_train in batch_train[0]:
-                        image_mse = torch.sum((image_train - image_cloud) ** 2) / (self.image_chw[0] * self.image_chw[1] * self.image_chw[2])
-                        self.inf_dis_mse += image_mse.item()
-                        n_images += 1
-                        
-        self.inf_dis_mse_mean = self.inf_dis_mse / n_images
-        
-    @torch.inference_mode()
-    def get_performance_features(self, feature_model):
-        
-        # Data
-        if not self.dl_test:
-            self.set_dl(batch_size=SETTINGS.diffusion_trainer['DEFAULT']['batch_size'], 
-                        num_workers=SETTINGS.diffusion_trainer['DEFAULT']['num_workers'])
-            
-        ds_samples = Dataset(folder=os.path.join(SETTINGS.diffusion_trainer['DEFAULT']['results_folder'],'testing'),
-                             image_chw=self.image_chw,
-                             data_sample_interval=None,
-                             is_dataset_results=True,
-                             t_cut_ratio=self.t_cut_ratio,
-                             client_id=self.id)
-        
-        dl_samples = DataLoader(ds_samples,
-                                batch_size=SETTINGS.diffusion_trainer['DEFAULT']['batch_size'],
-                                shuffle=True,
-                                num_workers=SETTINGS.diffusion_trainer['DEFAULT']['num_workers'])
-        
-        feature_list_actual = []
-        feature_list_synthetic = []
-        feature_list_test_data = []
-        
-        for batch in self.dl_train:
-            features = feature_model(batch[1].to(torch.device("cuda:0"))).detach().cpu().numpy()
-            feature_list_actual.append(features)
-            
-        for batch in self.dl_test:
-            features = feature_model(batch[1].to(torch.device("cuda:0"))).detach().cpu().numpy()
-            feature_list_test_data.append(features)
-        
-        for batch in dl_samples:
-            features = feature_model(batch[1].to(torch.device("cuda:0"))).detach().cpu().numpy()
-            feature_list_synthetic.append(features)
-        
-        features_actual = np.concatenate(feature_list_actual)
-        features_synthetic = np.concatenate(feature_list_synthetic)
-        features_test_data = np.concatenate(feature_list_test_data)
-        
-        return features_actual, features_synthetic, features_test_data
-
-    @torch.inference_mode()
-    def get_inf_dis_features(self, feature_model):
-        
-        # Data
-        if not self.dl_test:
-            self.set_dl(batch_size=SETTINGS.diffusion_trainer['DEFAULT']['batch_size'], 
-                        num_workers=SETTINGS.diffusion_trainer['DEFAULT']['num_workers'])
-            
-        ds_inf_dis = Dataset(folder=os.path.join(SETTINGS.diffusion_trainer['DEFAULT']['results_folder'],'testing'),
-                             image_chw=self.image_chw,
-                             data_sample_interval=None,
-                             is_dataset_cloud=True,
-                             t_cut_ratio=self.t_cut_ratio,
-                             client_id=self.id)
-        
-        self.dl_inf_dis = DataLoader(ds_inf_dis,
-                                batch_size=SETTINGS.diffusion_trainer['DEFAULT']['batch_size'],
-                                shuffle=True,
-                                num_workers=SETTINGS.diffusion_trainer['DEFAULT']['num_workers'])
-        
-        feature_list_actual = []
-        feature_list_inf_dis = []
-        feature_list_test_data = []
-        
-        for batch in self.dl_train:
-            features = feature_model(batch[1].to(torch.device("cuda:0"))).detach().cpu().numpy()
-            feature_list_actual.append(features)
-            
-        for batch in self.dl_test:
-            features = feature_model(batch[1].to(torch.device("cuda:0"))).detach().cpu().numpy()
-            feature_list_test_data.append(features)
-        
-        for batch in self.dl_inf_dis:
-            features = feature_model(batch[1].to(torch.device("cuda:0"))).detach().cpu().numpy()
-            feature_list_inf_dis.append(features)
-        
-        features_actual = np.concatenate(feature_list_actual)
-        features_inf_dis = np.concatenate(feature_list_inf_dis)
-        features_test_data = np.concatenate(feature_list_test_data)
-        
-        return features_actual, features_inf_dis, features_test_data      
+        return fid_score, clip_fid_score, kid_score
