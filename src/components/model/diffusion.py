@@ -530,21 +530,22 @@ class Diffusion_Trainer(object):
                                                                     noise_img=noise_img,
                                                                     return_all_timesteps=True)
                     case 'IMAGEN':
-                        cloud_img_samples = self.cloud.model.sample(t_min=float(client.t_cut_ratio),
-                                                                    t_max=1.0,
-                                                                    n_sampling_timesteps=int((1-client.t_cut_ratio) * self.cloud.model.num_timesteps),
-                                                                    noise_img=noise_img,
-                                                                    text_embeds=label_batch[0].cuda(),
-                                                                    text_masks=label_batch[1].cuda())
-                        
-                        cloud_img_approx = self.cloud.model.sample(t_min=0.0,
-                                                                    t_max=1.0,
-                                                                    n_sampling_timesteps=self.cloud.model.num_timesteps,
-                                                                    noise_img=cloud_img_samples.cuda(),
-                                                                    text_embeds=label_batch[0].cuda(),
-                                                                    text_masks=label_batch[1].cuda())
-                        
-                        LOGGER.info(f'{client.t_cut} - {cloud_img_samples.shape} shape')
+                        if client.t_cut_ratio < 1:
+                            cloud_img_samples = self.cloud.model.sample(t_min=float(client.t_cut_ratio),
+                                                                        t_max=1.0,
+                                                                        n_sampling_timesteps=int((1-client.t_cut_ratio) * self.cloud.model.num_timesteps),
+                                                                        noise_img=noise_img,
+                                                                        text_embeds=label_batch[0].cuda(),
+                                                                        text_masks=label_batch[1].cuda())
+                            
+                            cloud_img_approx = self.cloud.model.sample(t_min=0.0,
+                                                                        t_max=float(client.t_cut_ratio),
+                                                                        n_sampling_timesteps=int(float(client.t_cut_ratio) * self.cloud.model.num_timesteps),
+                                                                        noise_img=cloud_img_samples.cuda(),
+                                                                        text_embeds=label_batch[0].cuda(),
+                                                                        text_masks=label_batch[1].cuda())
+                            
+                            LOGGER.info(f'{client.t_cut} - {cloud_img_samples.shape} shape')
                     
                 if client.t_cut_ratio == 0:
                     img_samples=cloud_img_samples
@@ -608,7 +609,7 @@ class Diffusion_Trainer(object):
                         if cloud_img_samples is not None:
                             cloud_cut=(func.unnormalize_to_zero_to_one(cloud_img_samples[batch_idx].cpu().numpy().squeeze()) * 255).astype(np.uint8)
                             cloud_approx=(func.unnormalize_to_zero_to_one(cloud_img_approx[batch_idx].cpu().numpy().squeeze()) * 255).astype(np.uint8)
-                        if client_img_samples is not None:
+                        if client_img_samples is not None and client.t_cut_ratio < 1:
                             client_img_from_noise=(func.unnormalize_to_zero_to_one(client_img_samples_from_noise[batch_idx].cpu().numpy().squeeze()) * 255).astype(np.uint8)
                     
                     if testing:
@@ -673,7 +674,7 @@ class Diffusion_Trainer(object):
                             img = Image.fromarray(cloud_approx)
                             img.save(image_cloud_approx_save_path)
                         
-                        if client_img_samples_from_noise is not None:
+                        if client_img_samples_from_noise is not None and client.t_cut_ratio < 1:
                             client_img_from_noise=client_img_from_noise.transpose(1, 2, 0)
                             img = Image.fromarray(client_img_from_noise)
                             img.save(image_client_from_noise_save_path)

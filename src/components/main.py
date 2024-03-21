@@ -20,8 +20,7 @@ from src.components.nodes.cloud_node import Cloud
 from src.components.utils.data_slicer import slice
 
 parser = argparse.ArgumentParser(
-                prog='DistributedGenAI',
-                epilog='For help refer to simeon.allmendinger@uni-bayreuth.de')
+                prog='Collaborative Diffusion Models')
 
 parser.add_argument('--path_tmp_dir',
                     default='./',
