@@ -29,4 +29,4 @@ Birds:
   path_labels: data/Birds/images.txt
   path_text_embeds: data/Birds/embeds/
   n_train_items: 2000
-  n_test_items: 1000
+  n_test_items: 2000

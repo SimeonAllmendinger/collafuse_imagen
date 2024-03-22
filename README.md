@@ -1,6 +1,6 @@
 # Distributed Collaborative Diffusion Models for Synthetic Image Generation
 
-![sample_illustrations](./docs/sample_illustrations.pdf)
+![sample_illustrations](./docs/sample_illustrations.png)
 
 ## Abstract
 
