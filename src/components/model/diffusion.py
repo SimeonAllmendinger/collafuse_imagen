@@ -453,27 +453,28 @@ class Diffusion_Trainer(object):
                                 'kid': kid_score}, index=[0])
                     test_results = pd.concat([test_results, row], ignore_index=True)
             
-            fid_score = fid.compute_fid(fdir1=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/{dir_name}/'), 
-                                        fdir2=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/real/'), 
-                                        mode="clean", 
-                                        model_name="inception_v3")
-        
-            clip_fid_score = fid.compute_fid(fdir1=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/{dir_name}/'), 
-                                        fdir2=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/real/'), 
-                                        mode="clean", 
-                                        model_name="clip_vit_b_32")
+            if os.path.exists(self.results_folder + f"testing/{int(client.t_cut)}/{dir_name}"):
+                fid_score = fid.compute_fid(fdir1=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/{dir_name}/'), 
+                                            fdir2=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/real/'), 
+                                            mode="clean", 
+                                            model_name="inception_v3")
             
-            kid_score = fid.compute_kid(fdir1=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/{dir_name}/'), 
-                                        fdir2=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/real/'), 
-                                        mode="clean")
-            
-            row = pd.DataFrame({'client_id': 'ALL', 
-                                't_cut': client.t_cut, 
-                                'dir_name': dir_name, 
-                                'fid': fid_score, 
-                                'clip_fid': clip_fid_score, 
-                                'kid': kid_score}, index=[0])
-            test_results = pd.concat([test_results, row], ignore_index=True)
+                clip_fid_score = fid.compute_fid(fdir1=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/{dir_name}/'), 
+                                            fdir2=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/real/'), 
+                                            mode="clean", 
+                                            model_name="clip_vit_b_32")
+                
+                kid_score = fid.compute_kid(fdir1=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/{dir_name}/'), 
+                                            fdir2=os.path.join(self.results_folder, f'testing/{int(client.t_cut)}/real/'), 
+                                            mode="clean")
+                
+                row = pd.DataFrame({'client_id': 'ALL', 
+                                    't_cut': client.t_cut, 
+                                    'dir_name': dir_name, 
+                                    'fid': fid_score, 
+                                    'clip_fid': clip_fid_score, 
+                                    'kid': kid_score}, index=[0])
+                test_results = pd.concat([test_results, row], ignore_index=True)
         
         wandb.log({"test_results": wandb.Table(dataframe=test_results)})  
         test_results.to_csv(path_metric_test_results_folder + f'test_results_{int(client.t_cut)}.csv', index=False)      
@@ -550,8 +551,11 @@ class Diffusion_Trainer(object):
                 if client.t_cut_ratio == 0:
                     img_samples=cloud_img_samples
                     client_img_samples=None
+                    client_img_samples_from_noise=None
                     
                 elif client.t_cut_ratio == 1:
+                    cloud_img_samples=None
+                    client_img_samples_from_noise=None
                     match client.model_type:
                         case 'DDPM':
                             client_img_samples = client.model.sample(batch_size=sample_batch_size,

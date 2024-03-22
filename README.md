@@ -1,5 +1,7 @@
 # Distributed Collaborative Diffusion Models for Synthetic Image Generation
 
+![sample_illustrations](./docs/sample_illustrations.pdf)
+
 ## Abstract
 
 In the rapidly evolving landscape of generative artificial intelligence, diffusion-based models have emerged as a compelling approach for the generation of synthetic images. However, leveraging diffusion models entails several challenges, including issues related to data availability, computational requirements, and privacy concerns. Traditional methodologies, such as federated learning, often impose significant computational demands on individual clients, particularly those with limited resources. Addressing these challenges, our research introduces a novel framework for the distributed collaborative training of diffusion models inspired by split learning. This approach significantly reduces the computational load on clients during the image synthesis process by keeping data and less computationally intensive operations local, while offloading heavier tasks to shared server resources. Our experiments with the CelebA and Caltech-UCSD Birds datasets demonstrate the potential of our approach in enhancing privacy and reducing the need to share sensitive information. This work represents a significant step forward in distributed machine learning, offering valuable insights for the development of edge computing solutions and collaborative diffusion models.
@@ -39,7 +41,7 @@ Download the [CelebA](https://www.kaggle.com/datasets/jessicali9530/celeba-datas
 
 ### Running the Model
 
-To start collaborative training, use the following command, replacing `<data_dir>` with the path to your data directory:
+Prior to start collaborative training, adjust the `results_folder` in `./configs/config_diffusion_trainer`. Now, you can use the following command, replacing `<data_dir>` with the path to your data directory:
 
 ```bash
 .venv/bin/python3 ./src/components/main.py --path_tmp_dir <data_dir>
