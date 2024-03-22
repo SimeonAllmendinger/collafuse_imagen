@@ -1,9 +1,9 @@
 CLIENT_1:
   idx: 1
-  dataset_name: Birds #Birds #STL10 #CelebA BraTS2020
-  t_cut_ratio: 0.00
+  dataset_name: CelebA #Birds #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.20
   model_type: IMAGEN # DDPM, IMAGEN
-  celeb_a_attributes: 
+  celeb_a_attributes:
     - Blond_Hair
     - Brown_Hair
     - Black_Hair
@@ -18,11 +18,12 @@ CLIENT_1:
     - 6     # has_bill_shape::spatulate
     - 7     # has_bill_shape::all-purpose
     - 8     # has_bill_shape::cone
+    - 9     # has_bill_shape::specialized
 
 CLIENT_2:
   idx: 2
-  dataset_name: Birds #Birds #STL10 #CelebA BraTS2020
-  t_cut_ratio: 0.00
+  dataset_name: CelebA #Birds #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.20
   model_type: IMAGEN # DDPM, IMAGEN
   celeb_a_attributes:
     - Wearing_Necklace
@@ -37,17 +38,28 @@ CLIENT_2:
     - 16   # has_wing_color::yellow
     - 17   # has_wing_color::olive
     - 18   # has_wing_color::green
+    - 19   # has_wing_color::pink
+    - 20   # has_wing_color::orange
+    - 21   # has_wing_color::black
+    - 22   # has_wing_color::white
+    - 23   # has_wing_color::red
+    - 24   # has_wing_color::buff
   
 CLIENT_3:
   idx: 3
-  dataset_name: Birds #Birds #STL10 #CelebA BraTS2020
-  t_cut_ratio: 0.00
+  dataset_name: CelebA #Birds #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.20
   model_type: IMAGEN # DDPM, IMAGEN
   celeb_a_attributes:
     - Wavy_Hair
     - Straight_Hair
     - Bangs
   birds_attributes:
+    - 25    # has_upperparts_color::blue
+    - 26    # has_upperparts_color::brown
+    - 27    # has_upperparts_color::iridescent
+    - 28    # has_upperparts_color::purple
+    - 29    # has_upperparts_color::rufous
     - 30    # has_upperparts_color::grey
     - 31    # has_upperparts_color::yellow
     - 32    # has_upperparts_color::olive
@@ -61,27 +73,33 @@ CLIENT_3:
 
 CLIENT_4:
   idx: 4
-  dataset_name: Birds #Birds #STL10 #CelebA BraTS2020
-  t_cut_ratio: 0.00
+  dataset_name: CelebA #Birds #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.20
   model_type: IMAGEN # DDPM, IMAGEN
   celeb_a_attributes:
     - Bushy_Eyebrows
     - Arched_Eyebrows
   birds_attributes:
+    - 59    # has_back_color::blue
+    - 60    # has_back_color::brown
+    - 61    # has_back_color::iridescent
+    - 62    # has_back_color::purple
+    - 63    # has_back_color::rufous
+    - 64    # has_back_color::grey
+    - 65    # has_back_color::yellow
+    - 66    # has_back_color::olive
+    - 67    # has_back_color::green
+    - 68    # has_back_color::pink
     - 69    # has_back_color::orange
     - 70    # has_back_color::black
     - 71    # has_back_color::white
     - 72    # has_back_color::red
     - 73    # has_back_color::buff
-    - 74    # has_tail_shape::forked_tail
-    - 75    # has_tail_shape::rounded_tail
-    - 76    # has_tail_shape::notched_tail
-    - 77    # has_tail_shape::fan-shaped_tail
 
 CLIENT_5:
   idx: 5
-  dataset_name: Birds #Birds #STL10 #CelebA BraTS2020
-  t_cut_ratio: 0.00
+  dataset_name: CelebA #Birds #STL10 #CelebA BraTS2020
+  t_cut_ratio: 0.20
   model_type: IMAGEN # DDPM, IMAGEN
   celeb_a_attributes:
   - Eyeglasses
@@ -98,3 +116,7 @@ CLIENT_5:
     - 143     # has_eye_color::green
     - 144     # has_eye_color::pink
     - 145     # has_eye_color::orange
+    - 146     # has_eye_color::black
+    - 147     # has_eye_color::white
+    - 148     # has_eye_color::red
+    - 149     # has_eye_color::buff

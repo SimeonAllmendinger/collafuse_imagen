@@ -1,4 +1,4 @@
 CLOUD:
-  id: CLOUD_0
+  id: CLOUD_2
   model_type: IMAGEN # DDPM, IMAGEN
-  dataset_name: Birds #CelebA #STL10 #Birds
+  dataset_name: CelebA #CelebA #STL10 #Birds

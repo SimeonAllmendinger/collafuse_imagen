@@ -1,4 +1,4 @@
-mode: test # train, test
+mode: train # train, test
 
 DEFAULT:
   n_epochs: 1800                         # total training steps
