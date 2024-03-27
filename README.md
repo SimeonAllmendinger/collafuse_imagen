@@ -1,4 +1,4 @@
-# Distributed Collaborative Diffusion Models for Synthetic Image Generation
+# CollaFuse: Distributed Collaborative Diffusion Models for Synthetic Image Generation
 
 ![sample_illustrations](./docs/sample_illustrations.png)
 
@@ -56,3 +56,18 @@ Prior to start collaborative training, adjust the `results_folder` in `./configs
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## BibTeX Citation
+
+If you use CollaFuse, we would appreciate using the following citation:
+
+```
+@misc{zipperling2024collafuse,
+      title={CollaFuse: Navigating Limited Resources and Privacy in Collaborative Generative AI}, 
+      author={Domenique Zipperling and Simeon Allmendinger and Lukas Struppek and Niklas Kühl},
+      year={2024},
+      eprint={2402.19105},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG}
+}
+```

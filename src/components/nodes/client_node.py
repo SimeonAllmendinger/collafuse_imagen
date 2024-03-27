@@ -35,6 +35,7 @@ class Dataset(Dataset):
         image_chw: int,
         t_cut_ratio: float,
         client_id: str,
+        n_clients: int,
         exts = ['jpg', 'jpeg', 'png', 'tiff'],
         augment_horizontal_flip = False,
         convert_image_to = None,
@@ -67,9 +68,10 @@ class Dataset(Dataset):
         
         match self.dataset_name:
             case 'BraTS2020':
-                data_train_sample_interval = [int(n_train_items/(n_clients)*i) + 1 if i>0 else 1, int(n_train_items/(n_clients) * (i+1)) + 1]
-                data_test_sample_interval = [1, int(n_test_items) + 1]
-                data_sample_min, data_sample_max = data_train_sample_interval if is_dataset_results else data_test_sample_interval
+                
+                data_sample_min, data_sample_max = attributes 
+                
+                self.paths = [p for ext in exts for k in range(data_sample_min, data_sample_max) for p in Path(f'{folder}').glob(f'**/{k:03d}-*.{ext}')]
                 
             case 'CelebA':
                     
@@ -212,27 +214,31 @@ class Dataset(Dataset):
                 self.text_masks = torch.load(path_text_masks_file, map_location=torch.device('cpu'))
             
             case _:
-                self.paths = [p for ext in exts for k in range(self.data_sample_min, self.data_sample_max) for p in Path(f'{folder}').glob(f'**/{k:03d}-*.{ext}')]
+                LOGGER.error(f'Unknown dataset: {dataset_name}')
         
     def __len__(self):
         return len(self.paths)
 
     def __getitem__(self, index):
         path = os.path.join(self.folder, self.paths[index])
-        text = self.texts[index]
-        
-        match self.dataset_name:
-            case 'STL10':
-                label = (self.text_embeds[index], self.text_masks[index])
-            case 'CelebA':
-                label = (self.text_embeds[index], self.text_masks[index])
-            case 'Birds':
-                label = (self.text_embeds[index], self.text_masks[index])
-          
         img = Image.open(path)
         img= self.transform(img)
         
-        assert img.shape[0] == 3, f'{path} has image shape of {img.shape[0]}'
+        if self.dataset_name != 'BraTS2020':
+            assert img.shape[0] == 3, f'{path} has image shape of {img.shape[0]}'  
+            text = self.texts[index]
+        
+            match self.dataset_name:
+                case 'STL10':
+                    label = (self.text_embeds[index], self.text_masks[index])
+                case 'CelebA':
+                    label = (self.text_embeds[index], self.text_masks[index])
+                case 'Birds':
+                    label = (self.text_embeds[index], self.text_masks[index])
+        
+        if self.dataset_name == 'BraTS2020':
+            label = 0
+            text = 0
         
         return img, label, text
     
@@ -248,13 +254,20 @@ class Client(BaseNode):
                 t_cut_ratio: float,
                 path_tmp_dir: str,
                 model_type: str,
+                n_clients: int,
+                path_model_save_dir: str,
                 celeb_a_attributes: [str] = None,
                 birds_attributes: [str] = None,
                 seed: int = 42,
                 ):
         
         # Call the parent class constructor
-        super().__init__(id=f'CLIENT_{idx}', node_type='Client', device=device, model_type=model_type, dataset_name=dataset_name)
+        super().__init__(_id=f'CLIENT_{idx}', 
+                         node_type='Client', 
+                         device=device, 
+                         model_type=model_type, 
+                         path_model_save_dir=path_model_save_dir,
+                         dataset_name=dataset_name)
         
         # Set the t_cut_ratio attribute
         self.t_cut_ratio = t_cut_ratio
@@ -275,16 +288,27 @@ class Client(BaseNode):
                 self.ds_train = FashionMNIST(f"{path_tmp_dir}/data", download=True, train=True, transform=self.transform)
                 self.ds_test = FashionMNIST(f"{path_tmp_dir}/data", download=True, train=False, transform=self.transform)
             case 'BraTS2020':
+                # Define the data sample interval for training and testing
+                n_client_train_items = int(SETTINGS.data['BraTS2020']['n_train_items']/n_clients)
+                n_client_test_items = int(SETTINGS.data['BraTS2020']['n_test_items']/n_clients)
+                data_train_sample_interval = [int((idx-1) * n_client_train_items), int(idx * n_client_train_items)]
+                data_test_sample_interval = [int((idx-1) * n_client_test_items), int(idx * n_client_test_items)]
+                
+                # Initialize the datasets
                 self.ds_train = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['BraTS2020']['path_train_sliced']), 
                                         image_chw=image_chw,
-                                        data_sample_interval=data_train_sample_interval,
                                         t_cut_ratio=self.t_cut_ratio,
-                                        client_id=self.id)
+                                        client_id=self.id,
+                                        n_clients=n_clients,
+                                        dataset_name=dataset_name,
+                                        attributes=data_train_sample_interval)
                 self.ds_test = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['BraTS2020']['path_test_sliced']), 
-                                    image_chw=image_chw,
-                                    data_sample_interval=data_test_sample_interval,
-                                    t_cut_ratio=self.t_cut_ratio,
-                                    client_id=self.id)
+                                       image_chw=image_chw,
+                                       t_cut_ratio=self.t_cut_ratio,
+                                       client_id=self.id,
+                                       n_clients=n_clients,
+                                       dataset_name=dataset_name,
+                                       attributes=data_test_sample_interval)
             
             case 'CelebA':
                 self.ds = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_train_images']), 
@@ -294,7 +318,8 @@ class Client(BaseNode):
                                     path_labels=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_labels']),
                                     path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_text_embeds']),
                                     dataset_name=dataset_name,
-                                    attributes=celeb_a_attributes)
+                                    attributes=celeb_a_attributes,
+                                    n_clients=n_clients)
                 g_cpu = torch.Generator()
                 g_cpu.manual_seed(seed)
                 self.ds_train, self.ds_test, self.ds_remainder = random_split(dataset=self.ds, 
@@ -309,7 +334,8 @@ class Client(BaseNode):
                                     path_labels=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_labels']),
                                     path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_text_embeds']),
                                     dataset_name=dataset_name,
-                                    attributes=birds_attributes)
+                                    attributes=birds_attributes,
+                                    n_clients=n_clients)
                 g_cpu = torch.Generator()
                 g_cpu.manual_seed(seed)
                 self.ds_train, self.ds_test, self.ds_remainder = random_split(dataset=self.ds, 
@@ -324,7 +350,8 @@ class Client(BaseNode):
                                         client_id=self.id,
                                         path_labels=os.path.join(path_tmp_dir,SETTINGS.data['STL10']['path_labels']),
                                         path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['STL10']['path_text_embeds']),
-                                        dataset_name=dataset_name)
+                                        dataset_name=dataset_name,
+                                        n_clients=n_clients)
                 self.ds_test = []
                 
             case _:

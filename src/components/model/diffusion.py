@@ -234,14 +234,44 @@ class Diffusion_Trainer(object):
                     # Computing the noisy image based on x0 and the time-step (forward process)
                     match client.model_type:
                         case 'DDPM':
-                            t = torch.randint(0, client.model.num_timesteps,
-                                        (batch_size,), device=client.device).long()
-                            client.noisy_imgs = client.model(x0=x0,
-                                                             t=t,
-                                                             noise=client.eta.cuda(),
-                                                             offset_noise_strength=self.offset_noise_strength)
-                            self.cloud.t = t[t >= client.t_cut]
-                            client.t = t[t < client.t_cut]
+                            if client.t_cut_ratio > 0:
+                                # t client
+                                client.t = torch.randint(0,client.t_cut,
+                                                         (batch_size,), 
+                                                         device=client.device).long()
+                                # noisy_imgs client
+                                client_noisy_imgs = client.model(x0=x0,
+                                                                 t=client.t,
+                                                                 noise=client_eta.cuda(),
+                                                                 offset_noise_strength=self.offset_noise_strength)
+                                
+                            else:
+                                client.t = torch.tensor([]).long()
+                                cut_noisy_imgs = x0
+                                
+                            ## Cloud
+                            if client.t_cut_ratio < 1:
+                                # t cloud
+                                self.cloud.t = torch.randint(client.t_cut,
+                                                             self.cloud.model.num_timesteps,
+                                                             (batch_size,), 
+                                                             device=client.device).long()
+                                # t cut
+                                t_cut_tensor = torch.full_like(input=self.cloud.t, fill_value=client.t_cut)
+                                # cut noisy_imgs
+                                cut_noisy_imgs = self.cloud.model(x0=x0,
+                                                                  t=t_cut_tensor,
+                                                                  noise=client_eta.cuda(),
+                                                                  offset_noise_strength=self.offset_noise_strength)
+                                
+                                # noisy_imgs cloud
+                                cloud_noisy_imgs = self.cloud.model(x0=cut_noisy_imgs.cuda(),
+                                                                    t=self.cloud.t,
+                                                                    noise=cloud_eta.cuda(),
+                                                                    offset_noise_strength=self.offset_noise_strength)
+                            else:
+                                self.cloud.t = torch.tensor([]).long()
+                                
                         case 'IMAGEN':
                             ## Client
                             if client.t_cut_ratio > 0:
@@ -296,10 +326,10 @@ class Diffusion_Trainer(object):
                     if len(self.cloud.t) > 0:
                         match self.cloud.model_type:
                             case 'DDPM':
-                                self.cloud.loss = self.cloud.model.backward(noisy_imgs=client.noisy_imgs[client.t.shape[0]:].cuda(),
+                                self.cloud.loss = self.cloud.model.backward(noisy_imgs=cloud_noisy_imgs.cuda(),
                                                                             imgs=x0.cuda(),
                                                                             t=self.cloud.t_reshape,
-                                                                            noise=client.eta[client.t.shape[0]:].cuda())
+                                                                            noise=cloud_eta.cuda())
                             case 'IMAGEN':
                                 self.cloud.loss = self.cloud.model.backward(x_noisy=cloud_noisy_imgs.cuda(),
                                                                             images=x0,
@@ -320,10 +350,10 @@ class Diffusion_Trainer(object):
                     if len(client.t) > 0:
                         match self.cloud.model_type:
                             case 'DDPM':
-                                client.loss = client.model.backward(noisy_imgs=client.noisy_imgs[:client.t.shape[0]],
-                                                                                imgs=x0,
-                                                                                t=client.t_reshape,
-                                                                                noise=client.eta[:client.t.shape[0]])
+                                client.loss = client.model.backward(noisy_imgs=client_noisy_imgs,
+                                                                    imgs=x0,
+                                                                    t=client.t_reshape,
+                                                                    noise=client_eta.cuda())
                             case 'IMAGEN':
                                 client.loss = client.model.backward(x_noisy=client_noisy_imgs.cuda(),
                                                                     images=x0,
@@ -510,27 +540,45 @@ class Diffusion_Trainer(object):
                 
                 noise_img = torch.randn_like(img_batch).cuda()
                 
-                # t cloud
-                self.cloud.t = self.cloud.noise_scheduler.sample_random_times(batch_size, sample_interval=(client.t_cut_ratio,1),device = client.device) # shape: (batch_size)
-                # t cut
-                t_cut_tensor = torch.full_like(input=self.cloud.t, fill_value=client.t_cut_ratio)
-                
-                # cut noisy_imgs
-                log_snr = self.cloud.noise_scheduler.log_snr(t_cut_tensor).type(img_batch.dtype)
-                log_snr_padded_dim = func.right_pad_dims_to(img_batch, log_snr)
-                cut_alpha, cut_sigma =  func.log_snr_to_alpha_sigma(log_snr_padded_dim)
-                
-                cut_noisy_imgs = cut_alpha*img_batch.cuda() + cut_sigma * noise_img
-                
                 # Sample using Clouds
                 match self.cloud.model_type:
                     case 'DDPM':
-                        cloud_img_samples = self.cloud.model.sample(batch_size=sample_batch_size,
-                                                                    t_min=0,
-                                                                    t_max=self.cloud.model.num_timesteps,
-                                                                    noise_img=noise_img,
-                                                                    return_all_timesteps=True)
+                        # t cloud
+                        self.cloud.t = torch.randint(client.t_cut,
+                                                     self.cloud.model.num_timesteps,
+                                                     (batch_size,), 
+                                                     device=client.device).long()
+                        # t cut
+                        t_cut_tensor = torch.full_like(input=self.cloud.t, fill_value=client.t_cut)
+                        # cut noisy_imgs
+                        cut_noisy_imgs = self.cloud.model(x0=x0,
+                                                          t=t_cut_tensor,
+                                                          noise=client_eta.cuda(),
+                                                          offset_noise_strength=self.offset_noise_strength)
+                        if client.t_cut_ratio < 1:
+                            cloud_img_samples = self.cloud.model.sample(batch_size=sample_batch_size,
+                                                                        t_min=int(client.t_cut),
+                                                                        t_max=self.cloud.model.num_timesteps,
+                                                                        noise_img=noise_img,
+                                                                        return_all_timesteps=False)
+                            cloud_img_approx = self.cloud.model.sample(batch_size=sample_batch_size,
+                                                                       t_min=0,
+                                                                       t_max=int(client.t_cut),
+                                                                       noise_img=cloud_img_samples.cuda(),
+                                                                       return_all_timesteps=False)
                     case 'IMAGEN':
+                        # t cloud
+                        self.cloud.t = self.cloud.noise_scheduler.sample_random_times(batch_size, sample_interval=(client.t_cut_ratio,1),device = client.device) # shape: (batch_size)
+                        # t cut
+                        t_cut_tensor = torch.full_like(input=self.cloud.t, fill_value=client.t_cut_ratio)
+                        
+                        # cut noisy_imgs
+                        log_snr = self.cloud.noise_scheduler.log_snr(t_cut_tensor).type(img_batch.dtype)
+                        log_snr_padded_dim = func.right_pad_dims_to(img_batch, log_snr)
+                        cut_alpha, cut_sigma =  func.log_snr_to_alpha_sigma(log_snr_padded_dim)
+                        
+                        cut_noisy_imgs = cut_alpha*img_batch.cuda() + cut_sigma * noise_img
+                        
                         if client.t_cut_ratio < 1:
                             cloud_img_samples = self.cloud.model.sample(t_min=float(client.t_cut_ratio),
                                                                         t_max=1.0,
@@ -562,7 +610,7 @@ class Diffusion_Trainer(object):
                                                         t_min=0,
                                                         t_max=client.model.num_timesteps,
                                                         noise_img=noise_img.cuda(),
-                                                        return_all_timesteps=return_all_timesteps)
+                                                        return_all_timesteps=False)
                         case 'IMAGEN':
                             client_img_samples = client.model.sample(t_min=0.0,
                                                         t_max=1.00,
@@ -580,9 +628,15 @@ class Diffusion_Trainer(object):
                         case 'DDPM':
                             client_img_samples = client.model.sample(batch_size=sample_batch_size,
                                                         t_min=0,
-                                                        t_max=client.t_cut,
-                                                        noise_img=cloud_img_samples[:,-int(client.t_cut+1),...].cuda(),
+                                                        t_max=int(client.t_cut + client.t_cut * (1-client.t_cut_ratio)),
+                                                        noise_img=cloud_img_samples.cuda(),
                                                         return_all_timesteps=return_all_timesteps)
+                            
+                            client_img_samples_from_noise = client.model.sample(batch_size=sample_batch_size,
+                                                                                t_min=0,
+                                                                                t_max=client.model.num_timesteps,
+                                                                                noise_img=noise_img.cuda(),
+                                                                                return_all_timesteps=return_all_timesteps)
                         case 'IMAGEN':
                             client_img_samples = client.model.sample(t_min=0.0,
                                                                     t_max=float(client.t_cut_ratio) + float(client.t_cut_ratio * (1-client.t_cut_ratio)),

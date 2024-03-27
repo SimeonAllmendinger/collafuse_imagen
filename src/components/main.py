@@ -11,6 +11,7 @@ from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 
 import torch
+from torchsummary import summary
 from torchvision.datasets.mnist import MNIST, FashionMNIST
 
 from src.components.utils.settings import Settings
@@ -58,18 +59,17 @@ def main(path_tmp_dir: str):
                         image_chw=image_chw, 
                         n_train_items=n_train_items,
                         n_test_items=n_test_items,
-                        path_tmp_dir=path_tmp_dir)
+                        path_tmp_dir=path_tmp_dir,
+                        n_clients=n_clients)
         
         clients[client.id] = client
         
         LOGGER.info(f'{client_name} created with {len(client.ds_train)} train samples and {len(client.ds_test)} test samples')
     
     cloud_device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    model_type = SETTINGS.clouds['CLOUD']['model_type']
-    dataset_name = SETTINGS.clouds['CLOUD']['dataset_name']
-    cloud_id = SETTINGS.clouds['CLOUD']['id']
-    cloud = Cloud(id=cloud_id, device=cloud_device, model_type=model_type, dataset_name=dataset_name)
-
+    
+    cloud = Cloud(**SETTINGS.clouds['CLOUD'], device=cloud_device)
+    
     diffusion_trainer = Diffusion_Trainer(clients=clients, cloud=cloud, **SETTINGS.diffusion_trainer['DEFAULT'])
     
     match SETTINGS.diffusion_trainer['mode']:

@@ -12,9 +12,9 @@ SETTINGS=Settings()
 LOGGER = SETTINGS.logger()
     
 class BaseNode():
-    def __init__(self, id: str, node_type: str, device: str, model_type: str, dataset_name=None):
+    def __init__(self, _id: str, node_type: str, device: str, model_type: str, path_model_save_dir: str, dataset_name=None):
         # Properties
-        self._id=id
+        self._id=_id
         self.node_type=node_type
         self.model_type=model_type
         imagen_timesteps=SETTINGS.imagen_model['DEFAULT']['timesteps']
@@ -29,7 +29,8 @@ class BaseNode():
             case 'DDPM':
                 self.model=Diffusion_Model(unet=Unet(**SETTINGS.unet['DEFAULT']), device=device, path_save_model=f'./src/assets/diffusion_model_{self.id}.pt', **SETTINGS.diffusion_model['DEFAULT'])
             case 'IMAGEN':
-                self.model=Imagen(unets=[EfficientUnet(**SETTINGS.efficient_unet['UNET_64'])], path_save_model=f"/home/vault/btr0/btr0104h/collafuse/models/{imagen_timesteps}/imagen_model_{dataset_name}_{self.id}_s-{SETTINGS.imagen_model['DEFAULT']['image_sizes'][0]}.pt", **SETTINGS.imagen_model['DEFAULT']).cuda()
+                path_save_model=os.path.join(path_model_save_dir,f"{imagen_timesteps}/imagen_model_{dataset_name}_{self.id}_s-{SETTINGS.imagen_model['DEFAULT']['image_sizes'][0]}.pt")
+                self.model=Imagen(unets=[EfficientUnet(**SETTINGS.efficient_unet['UNET_64'])], path_save_model=path_save_model, **SETTINGS.imagen_model['DEFAULT']).cuda()
         
         # Resources
         self.tracker = EmissionsTracker(save_to_logger=True, logging_logger=LOGGER, log_level="error")

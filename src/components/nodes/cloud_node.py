@@ -9,8 +9,14 @@ class Cloud(BaseNode):
                  device,
                  model_type: str,
                  dataset_name: str,
-                 id: str
+                 idx: int,
+                 path_model_save_dir: str
                  ):
         
         node_type='Cloud'
-        super().__init__(id, node_type, device=device, model_type=model_type, dataset_name=dataset_name)
+        super().__init__(_id=f"CLOUD_{idx}", 
+                         node_type=node_type, 
+                         device=device,
+                         path_model_save_dir=path_model_save_dir,
+                         model_type=model_type, 
+                         dataset_name=dataset_name)
