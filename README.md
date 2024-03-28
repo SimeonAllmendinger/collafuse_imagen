@@ -18,7 +18,7 @@ In the landscape of generative artificial intelligence, diffusion-based models h
 1. Clone the repository to your local machine:
 
    ```bash
-   git clone https://anonymous.4open.science/r/collafuse-83C7/
+   git clone https://github.com/SimeonAllmendinger/collafuse.git
    cd collafuse
    ```
 
