@@ -12,15 +12,15 @@ DEFAULT:
   - 0.9
   - 0.99
   save_and_sample_every: 500
-  num_samples: 25
+  n_train_samples: 25
   results_folder: /home/vault/btr0/btr0104h/collafuse/results/
-  calculate_performance: True          # whether to calculate fid during training
   offset_noise_strength: 0
   load_existing_model: True
   pretrain_client_from_cloud: False
 
 GENERATION:
   n_samples: 2100 # samples per client
+  sample_batch_size: 50
   return_all_timesteps: False
   create_new_samples: True
   start_sampling_from_idx: 0

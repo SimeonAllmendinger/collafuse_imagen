@@ -57,9 +57,8 @@ class Diffusion_Trainer(object):
                  lr=1e-4,
                  adam_betas=(0.9, 0.99),
                  save_and_sample_every=1000,
-                 num_samples=25,
+                 n_train_samples=25,
                  results_folder='./results',
-                 calculate_performance=True,
                  offset_noise_strength=None,
                  load_existing_model=False,
                  pretrain_client_from_cloud=False
@@ -72,13 +71,9 @@ class Diffusion_Trainer(object):
         self.step = 0
         self.initial_loss=initial_loss
 
-        # FID-score computation
-        self.calculate_performance = calculate_performance
-
         # sampling and training hyperparameters
-        assert func.has_int_squareroot(
-            num_samples), 'number of samples must have an integer square root'
-        self.num_samples = num_samples
+        assert func.has_int_squareroot(n_train_samples), 'number of samples must have an integer square root'
+        self.n_train_samples = n_train_samples
         self.save_and_sample_every = save_and_sample_every
 
         # Parameters
@@ -106,6 +101,10 @@ class Diffusion_Trainer(object):
         self.build()
 
     def build(self):
+        """
+        Build the trainer
+        """
+        
         # Initialization of nodes
         self.cloud.optimizer = Adam(self.cloud.model.parameters(), lr=self.lr, betas=self.adam_betas)
         self.cloud.energy_resources=0
@@ -148,7 +147,18 @@ class Diffusion_Trainer(object):
             LOGGER.info(f'Initialize new models')
         
     def save(self, path_save_model, model, optimizer):
-
+        """
+        Save the models
+        
+        Args:
+            path_save_model (str): Path to save the model
+            model (torch.nn.Module): Model to save
+            optimizer (torch.optim): Optimizer to save
+            
+        Returns:
+            None
+        """
+        
         data = {
             'step': self.step,
             'model': model.state_dict(),
@@ -159,6 +169,9 @@ class Diffusion_Trainer(object):
         LOGGER.info(f'Model saved at {path_save_model}')
 
     def load(self):        
+        """
+        Load the models
+        """
         
         if os.path.exists(self.cloud.model.path_save_model):
             #* CLOUD
@@ -191,7 +204,10 @@ class Diffusion_Trainer(object):
                 LOGGER.warning(f'{client_id} model does not exist at {client.path_save_model}')
             
     def train(self):
-
+        """
+        Train the models
+        """
+        
         # 1. Start a W&B Run
         self.run = wandb.init(
             project="distributed_genai",
@@ -444,6 +460,9 @@ class Diffusion_Trainer(object):
         wandb.finish()
 
     def test(self):
+        """
+        Test the performance of the trained models
+        """
         
         # 1. Start a W&B Run
         self.run = wandb.init(
@@ -462,7 +481,8 @@ class Diffusion_Trainer(object):
         path_metric_test_results_folder = SETTINGS.diffusion_trainer['GENERATION']['path_metric_test_results_folder']
         
         self.load()
-        self.generate_images(testing=True)
+        if SETTINGS.diffusion_trainer['GENERATION']['create_new_samples']:
+            self.generate_images(testing=True)
         
         test_results = pd.DataFrame(columns=['client_id', 't_cut', 'dir_name', 'fid', 'clip_fid', 'kid'])
         
@@ -514,23 +534,36 @@ class Diffusion_Trainer(object):
         wandb.finish()
     
     def generate_images(self, testing=False):
+        """
+        Generate images using the trained models
+        
+        Args:
+            testing (bool): If True, generate images for testing, else for training
+        
+        Returns:
+            None
+        """
         
         # Obtain SETTINGS
-        batch_size=SETTINGS.diffusion_trainer['DEFAULT']['batch_size']
         return_all_timesteps=SETTINGS.diffusion_trainer['GENERATION']['return_all_timesteps']
-        n_samples=SETTINGS.diffusion_trainer['GENERATION']['n_samples']
-        return_pil_images=True
         
-        for batch_k in range(int(np.ceil(n_samples/batch_size))):
+        if testing:
+            n_samples=SETTINGS.diffusion_trainer['GENERATION']['n_samples']
+            batch_size=SETTINGS.diffusion_trainer['GENERATION']['sample_batch_size']
+            n_batches = int(np.ceil(n_samples/batch_size)) 
             
-            LOGGER.info(f'Batch {batch_k} of {int(np.ceil(n_samples/batch_size))} batches')
+        else:
+            batch_size=SETTINGS.diffusion_trainer['DEFAULT']['batch_size']
+            n_batches = int(np.ceil(self.n_train_samples/batch_size))
+            train_sampling = True
+        
+        for batch_k in range(n_batches):
+            
+            LOGGER.info(f'Batch {batch_k} of {n_batches} batches')
             if testing:
                 wandb.log({"batch_k": batch_k})
             
             if batch_k*batch_size < SETTINGS.diffusion_trainer['GENERATION']['start_sampling_from_idx']:
-                continue
-            
-            if not SETTINGS.diffusion_trainer['GENERATION']['create_new_samples'] and testing:
                 continue
             
             # Continue sampling using Clients
@@ -556,12 +589,12 @@ class Diffusion_Trainer(object):
                                                           noise=client_eta.cuda(),
                                                           offset_noise_strength=self.offset_noise_strength)
                         if client.t_cut_ratio < 1:
-                            cloud_img_samples = self.cloud.model.sample(batch_size=sample_batch_size,
+                            cloud_img_samples = self.cloud.model.sample(batch_size=batch_size,
                                                                         t_min=int(client.t_cut),
                                                                         t_max=self.cloud.model.num_timesteps,
                                                                         noise_img=noise_img,
                                                                         return_all_timesteps=False)
-                            cloud_img_approx = self.cloud.model.sample(batch_size=sample_batch_size,
+                            cloud_img_approx = self.cloud.model.sample(batch_size=batch_size,
                                                                        t_min=0,
                                                                        t_max=int(client.t_cut),
                                                                        noise_img=cloud_img_samples.cuda(),
@@ -606,7 +639,7 @@ class Diffusion_Trainer(object):
                     client_img_samples_from_noise=None
                     match client.model_type:
                         case 'DDPM':
-                            client_img_samples = client.model.sample(batch_size=sample_batch_size,
+                            client_img_samples = client.model.sample(batch_size=batch_size,
                                                         t_min=0,
                                                         t_max=client.model.num_timesteps,
                                                         noise_img=noise_img.cuda(),
@@ -626,13 +659,13 @@ class Diffusion_Trainer(object):
                 else:
                     match client.model_type:
                         case 'DDPM':
-                            client_img_samples = client.model.sample(batch_size=sample_batch_size,
+                            client_img_samples = client.model.sample(batch_size=batch_size,
                                                         t_min=0,
                                                         t_max=int(client.t_cut + client.t_cut * (1-client.t_cut_ratio)),
                                                         noise_img=cloud_img_samples.cuda(),
                                                         return_all_timesteps=return_all_timesteps)
                             
-                            client_img_samples_from_noise = client.model.sample(batch_size=sample_batch_size,
+                            client_img_samples_from_noise = client.model.sample(batch_size=batch_size,
                                                                                 t_min=0,
                                                                                 t_max=client.model.num_timesteps,
                                                                                 noise_img=noise_img.cuda(),
@@ -740,8 +773,9 @@ class Diffusion_Trainer(object):
                     else:
                         wandb.log({f'Gen_Img_e{self.epoch}-{client_id}_{text[batch_idx]}': wandb.Image(img_raw)})
 
-                        #! Caution
-                        break
+                        if self.n_train_samples == batch_idx:
+                            train_sampling = False
+                            break
                          
-            if not testing:
+            if not testing and not train_sampling:
                 break

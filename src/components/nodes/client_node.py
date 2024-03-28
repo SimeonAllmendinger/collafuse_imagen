@@ -41,6 +41,8 @@ class Dataset(Dataset):
         convert_image_to = None,
         path_labels=None,
         path_text_embeds=None,
+        path_image_attribute_labels=None,
+        path_image_attributes=None,
         dataset_name=None,
         attributes=None,
         len_chunk=30000
@@ -128,8 +130,8 @@ class Dataset(Dataset):
             
             case 'Birds':
                 df_img = pd.read_csv(path_labels, sep=' ', header=0)  
-                df_labels = pd.read_csv('/home/woody/btr0/btr0104h/data/Birds/attributes/image_attribute_labels.txt', sep=r'\s+', header=0, usecols=[0,1,2,3])
-                df_att = pd.read_csv('/home/woody/btr0/btr0104h/data/Birds/attributes/attributes.txt', sep=' ', header=0)
+                df_labels = pd.read_csv(path_image_attribute_labels, sep=r'\s+', header=0, usecols=[0,1,2,3])
+                df_att = pd.read_csv(path_image_attributes, sep=' ', header=0)
                 
                 df_labels = df_labels.loc[(df_labels.iloc[:,1].isin(attributes)) & (df_labels.iloc[:,2] == 1) & (df_labels.iloc[:,3] == 4),:]
                 list_img_unique = sorted(df_labels.iloc[:,0].unique().tolist())
@@ -308,8 +310,7 @@ class Client(BaseNode):
                                        client_id=self.id,
                                        n_clients=n_clients,
                                        dataset_name=dataset_name,
-                                       attributes=data_test_sample_interval)
-            
+                                       attributes=data_test_sample_interval)      
             case 'CelebA':
                 self.ds = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['CelebA']['path_train_images']), 
                                     image_chw=image_chw,
@@ -324,8 +325,7 @@ class Client(BaseNode):
                 g_cpu.manual_seed(seed)
                 self.ds_train, self.ds_test, self.ds_remainder = random_split(dataset=self.ds, 
                                                                               lengths=[n_train_items, n_test_items, len(self.ds) - n_train_items - n_test_items],
-                                                                              generator=g_cpu)
-            
+                                                                              generator=g_cpu)      
             case 'Birds':
                 self.ds = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_train_images']), 
                                     image_chw=image_chw,
@@ -333,6 +333,8 @@ class Client(BaseNode):
                                     client_id=self.id,
                                     path_labels=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_labels']),
                                     path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_text_embeds']),
+                                    path_image_attribute_labels=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_image_attribute_labels']),
+                                    path_image_attributes=os.path.join(path_tmp_dir,SETTINGS.data['Birds']['path_image_attributes']),
                                     dataset_name=dataset_name,
                                     attributes=birds_attributes,
                                     n_clients=n_clients)
@@ -340,8 +342,7 @@ class Client(BaseNode):
                 g_cpu.manual_seed(seed)
                 self.ds_train, self.ds_test, self.ds_remainder = random_split(dataset=self.ds, 
                                                                               lengths=[n_train_items, n_test_items, len(self.ds) - n_train_items - n_test_items],
-                                                                              generator=g_cpu)
-            
+                                                                              generator=g_cpu)            
             case 'STL10':
                 self.ds_train = Dataset(folder=os.path.join(path_tmp_dir,SETTINGS.data['STL10']['path_train_images']), 
                                         image_chw=image_chw,
@@ -352,8 +353,7 @@ class Client(BaseNode):
                                         path_text_embeds=os.path.join(path_tmp_dir,SETTINGS.data['STL10']['path_text_embeds']),
                                         dataset_name=dataset_name,
                                         n_clients=n_clients)
-                self.ds_test = []
-                
+                self.ds_test = []               
             case _:
                 raise ValueError(f'Unknown dataset: {dataset_name}')
         
@@ -362,7 +362,10 @@ class Client(BaseNode):
             LOGGER.info(f"Current device name of {self.id}: {device} | {torch.cuda.get_device_name(0)}" if torch.cuda.is_available() else 'cpu')
     
     @property
-    def path_save_model(self):
+    def path_save_model(self) -> str:
+        """
+        Get the path to save the model.
+        """
         path = self.model.path_save_model.replace('.pt',f"_tc-{self.t_cut_ratio}.pt")
         return path
         
@@ -395,7 +398,16 @@ class Client(BaseNode):
             )
 
     def compute_scores(self, results_folder: str, dir_name: str) -> tuple[float, float, float]:
+        """
+        Compute the scores for the client.
         
+        Args:
+            results_folder (str): The path to the results folder.
+            dir_name (str): The name of the directory.
+        
+        Returns:
+            tuple[float, float, float]: The FID, CLIP FID, and KID scores.
+        """
         LOGGER.info(f'Computing scores for t_cut-{int(self.t_cut)}-{self.id}: {dir_name}...')
         fid_score = fid.compute_fid(fdir1=os.path.join(results_folder, f'testing/{int(self.t_cut)}/{dir_name}/{self.id}/'), 
                                         fdir2=os.path.join(results_folder, f'testing/{int(self.t_cut)}/real/{self.id}/'), 

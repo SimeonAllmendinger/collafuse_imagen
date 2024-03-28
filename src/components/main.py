@@ -31,6 +31,12 @@ SETTINGS = Settings()
 LOGGER=SETTINGS.logger()
 
 def main(path_tmp_dir: str):
+    """
+    Main function to run the training or testing of the diffusion model.
+    
+    Args:
+        path_tmp_dir (str): path to the temporary directory to store the data.
+    """
     
     LOGGER.info(f'Available GPU devices: {torch.cuda.device_count()}')
     available_gpus = [torch.cuda.device(i) for i in range(torch.cuda.device_count())]
@@ -39,7 +45,6 @@ def main(path_tmp_dir: str):
     clients = {}
     n_clients = len(SETTINGS.clients)
     image_chw = (1, SETTINGS.imagen_model['DEFAULT']['image_sizes'][0], SETTINGS.imagen_model['DEFAULT']['image_sizes'][0])
-    #client_device_idx = 0
 
     LOGGER.info('Start initializing clients...')
     
@@ -52,7 +57,6 @@ def main(path_tmp_dir: str):
         
         # device
         client_device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-        #client_device_idx = client_device_idx if client_device_idx < len(available_gpus)-1 else 0
         
         client = Client(**client_dict, 
                         device=client_device, 

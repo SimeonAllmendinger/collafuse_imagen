@@ -88,6 +88,7 @@ smmap==5.0.1
 sympy==1.12
 tokenizers==0.15.0
 torch==2.1.2
+torchsummary==1.5.1
 torchvision==0.16.2
 tqdm==4.66.1
 transformers==4.36.2

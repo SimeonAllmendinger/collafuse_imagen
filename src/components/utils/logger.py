@@ -2,7 +2,7 @@ import os
 import logging
 import logging.config
 
-def _get_logger_(path_base_dir: str, verbose=False):
+def _get_logger_(path_base_dir: str, verbose=False) -> logging.Logger:
     
     logging.config.fileConfig(os.path.join(path_base_dir,'configs/utils/config_logger.conf'))
     master_logger = logging.getLogger('MasterLogger')

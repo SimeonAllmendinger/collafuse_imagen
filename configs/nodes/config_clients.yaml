@@ -1,9 +1,9 @@
 CLIENT_1:
   idx: 1
-  dataset_name: BraTS2020 #Birds #STL10 #CelebA BraTS2020
+  dataset_name: CelebA #Birds #STL10 #CelebA BraTS2020
   path_model_save_dir: /home/vault/btr0/btr0104h/collafuse/models/
   t_cut_ratio: 0.20
-  model_type: DDPM # DDPM, IMAGEN
+  model_type: IMAGEN # DDPM, IMAGEN
   celeb_a_attributes:
     - Blond_Hair
     - Brown_Hair
@@ -23,10 +23,10 @@ CLIENT_1:
 
 CLIENT_2:
   idx: 2
-  dataset_name: BraTS2020 #Birds #STL10 #CelebA BraTS2020
+  dataset_name: CelebA #Birds #STL10 #CelebA BraTS2020
   path_model_save_dir: /home/vault/btr0/btr0104h/collafuse/models/
   t_cut_ratio: 0.20
-  model_type: DDPM # DDPM, IMAGEN
+  model_type: IMAGEN # DDPM, IMAGEN
   celeb_a_attributes:
     - Wearing_Necklace
     - Wearing_Earrings
@@ -49,10 +49,10 @@ CLIENT_2:
   
 CLIENT_3:
   idx: 3
-  dataset_name: BraTS2020 #Birds #STL10 #CelebA BraTS2020
+  dataset_name: CelebA #Birds #STL10 #CelebA BraTS2020
   path_model_save_dir: /home/vault/btr0/btr0104h/collafuse/models/
   t_cut_ratio: 0.20
-  model_type: DDPM # DDPM, IMAGEN
+  model_type: IMAGEN # DDPM, IMAGEN
   celeb_a_attributes:
     - Wavy_Hair
     - Straight_Hair
@@ -76,10 +76,10 @@ CLIENT_3:
 
 CLIENT_4:
   idx: 4
-  dataset_name: BraTS2020 #Birds #STL10 #CelebA BraTS2020
+  dataset_name: CelebA #Birds #STL10 #CelebA BraTS2020
   path_model_save_dir: /home/vault/btr0/btr0104h/collafuse/models/
   t_cut_ratio: 0.20
-  model_type: DDPM # DDPM, IMAGEN
+  model_type: IMAGEN # DDPM, IMAGEN
   celeb_a_attributes:
     - Bushy_Eyebrows
     - Arched_Eyebrows
@@ -102,10 +102,10 @@ CLIENT_4:
 
 CLIENT_5:
   idx: 5
-  dataset_name: BraTS2020 #Birds #STL10 #CelebA BraTS2020
+  dataset_name: CelebA #Birds #STL10 #CelebA BraTS2020
   path_model_save_dir: /home/vault/btr0/btr0104h/collafuse/models/
   t_cut_ratio: 0.20
-  model_type: DDPM # DDPM, IMAGEN
+  model_type: IMAGEN # DDPM, IMAGEN
   celeb_a_attributes:
   - Eyeglasses
   - Narrow_Eyes

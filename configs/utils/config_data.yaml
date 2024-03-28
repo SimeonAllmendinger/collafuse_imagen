@@ -28,5 +28,7 @@ Birds:
   path_train_images: data/Birds/images/
   path_labels: data/Birds/images.txt
   path_text_embeds: data/Birds/embeds/
+  path_image_attribute_labels: data/Birds/attributes/image_attribute_labels.txt
+  path_image_attributes: data/Birds/attributes/attributes.txt
   n_train_items: 2000
   n_test_items: 2000

@@ -1,5 +1,5 @@
 CLOUD:
   idx: 2
-  model_type: DDPM # DDPM, IMAGEN
-  dataset_name: BraTS2020 #CelebA #STL10 #Birds
+  model_type: IMAGEN # DDPM, IMAGEN
+  dataset_name: CelebA #CelebA #STL10 #Birds
   path_model_save_dir: /home/vault/btr0/btr0104h/collafuse/models/
