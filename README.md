@@ -1,4 +1,4 @@
-# CollaFuse: Distributed Collaborative Diffusion Models for Synthetic Image Generation
+# CollaFuse: Collaborative Diffusion Models
 
 ![sample_illustrations](./docs/sample_illustrations.png)
 
